@@ -95,7 +95,6 @@ final class WorkspaceManager {
     @ObservationIgnored private weak var workspaceWindow: NSWindow?
 
     private static let bookmarkKey = "workspaceFolderBookmark"
-    private static let lastFilePathKey = "workspaceLastFilePath"
     private static let expandedPathsKey = "workspaceExpandedFolderPaths"
     private static let autoSaveDelay: TimeInterval = 0.45
 
@@ -263,7 +262,6 @@ final class WorkspaceManager {
             currentText = text
             lastSavedText = text
             isReplacingDocument = false
-            UserDefaults.standard.set(url.path, forKey: Self.lastFilePathKey)
             return true
         } catch {
             setError("Clearly couldn’t open “\(url.lastPathComponent)”.", error)
@@ -283,7 +281,12 @@ final class WorkspaceManager {
     private func saveCurrentFileIfNeeded() -> Bool {
         pendingSave?.cancel()
         pendingSave = nil
-        guard let currentFileURL, currentText != lastSavedText else { return true }
+        guard let currentFileURL else { return true }
+        guard FileManager.default.fileExists(atPath: currentFileURL.path) else {
+            clearCurrentFile()
+            return true
+        }
+        guard currentText != lastSavedText else { return true }
 
         do {
             try Data(currentText.utf8).write(to: currentFileURL, options: .atomic)
@@ -443,33 +446,14 @@ final class WorkspaceManager {
                     return
                 }
                 self.tree = nodes
+                self.clearCurrentFileIfDeleted()
                 self.isLoadingTree = false
-                self.restoreSelectionIfNeeded(from: nodes)
             }
         }
     }
 
-    private func restoreSelectionIfNeeded(from nodes: [WorkspaceTreeNode]) {
-        if let currentFileURL,
-           FileManager.default.fileExists(atPath: currentFileURL.path) {
-            return
-        }
-
-        let storedURL = UserDefaults.standard.string(forKey: Self.lastFilePathKey)
-            .map(URL.init(fileURLWithPath:))
-        if let storedURL,
-           isInsideWorkspace(storedURL),
-           WorkspaceTreeNode.contains(storedURL, in: nodes),
-           openFile(at: storedURL) {
-            return
-        }
-
-        if let firstURL = WorkspaceTreeNode.firstEditableFile(in: nodes) {
-            _ = openFile(at: firstURL)
-        }
-    }
-
     private func scheduleTreeRefresh() {
+        clearCurrentFileIfDeleted()
         refreshWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
@@ -552,6 +536,24 @@ final class WorkspaceManager {
         let rootPath = rootURL.standardizedFileURL.path
         let path = url.standardizedFileURL.path
         return path == rootPath || path.hasPrefix(rootPath + "/")
+    }
+
+    private func clearCurrentFileIfDeleted() {
+        guard let currentFileURL,
+              !FileManager.default.fileExists(atPath: currentFileURL.path) else {
+            return
+        }
+        clearCurrentFile()
+    }
+
+    private func clearCurrentFile() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        isReplacingDocument = true
+        currentFileURL = nil
+        currentText = ""
+        lastSavedText = ""
+        isReplacingDocument = false
     }
 
     private func setError(_ message: String, _ error: Error? = nil) {

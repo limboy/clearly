@@ -46,6 +46,7 @@ struct WorkspaceView: View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 WorkspaceSidebar(workspace: workspace)
                     .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 360)
+                    .toolbar(removing: .sidebarToggle)
             } detail: {
                 if workspace.currentFileURL != nil {
                     ContentView(
@@ -102,49 +103,84 @@ struct WorkspaceView: View {
 private struct WorkspaceSidebar: View {
     @Bindable var workspace: WorkspaceManager
     @State private var selectedFileURL: URL?
+    @State private var pendingScrollURL: URL?
 
     var body: some View {
-        List(selection: $selectedFileURL) {
-            Section {
-                ForEach(workspace.tree) { node in
-                    WorkspaceSidebarNode(node: node, workspace: workspace)
+        ScrollViewReader { proxy in
+            List(selection: $selectedFileURL) {
+                Section {
+                    ForEach(workspace.tree) { node in
+                        WorkspaceSidebarNode(node: node, workspace: workspace)
+                    }
+                } header: {
+                    HStack(spacing: 6) {
+                        Text(workspace.workspaceName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+
+                        Spacer(minLength: 4)
+
+                        if workspace.isLoadingTree {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    .textCase(nil)
                 }
-            } header: {
-                HStack(spacing: 6) {
-                    Text(workspace.workspaceName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-
-                    Spacer(minLength: 4)
-
-                    if workspace.isLoadingTree {
-                        ProgressView()
-                            .controlSize(.small)
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(Theme.sidebarBackgroundSwiftUI)
+            .contextMenu {
+                Button("New File", systemImage: "doc.badge.plus") {
+                    workspace.createNewFile()
+                }
+                Button("New Folder", systemImage: "folder.badge.plus") {
+                    workspace.promptForNewFolder()
+                }
+            }
+            .onAppear {
+                selectedFileURL = workspace.currentFileURL
+            }
+            .onChange(of: selectedFileURL) { oldURL, newURL in
+                guard let newURL,
+                      newURL.standardizedFileURL
+                        != workspace.currentFileURL?.standardizedFileURL else {
+                    return
+                }
+                DispatchQueue.main.async {
+                    if !workspace.openFile(at: newURL) {
+                        selectedFileURL = oldURL
                     }
                 }
-                .textCase(nil)
             }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .background(Theme.sidebarBackgroundSwiftUI)
-        .onAppear {
-            selectedFileURL = workspace.currentFileURL
-        }
-        .onChange(of: selectedFileURL) { oldURL, newURL in
-            guard let newURL,
-                  newURL.standardizedFileURL != workspace.currentFileURL?.standardizedFileURL else {
-                return
-            }
-            DispatchQueue.main.async {
-                if !workspace.openFile(at: newURL) {
-                    selectedFileURL = oldURL
+            .onChange(of: workspace.currentFileURL) { _, newURL in
+                if selectedFileURL?.standardizedFileURL != newURL?.standardizedFileURL {
+                    selectedFileURL = newURL
                 }
+                requestScroll(to: newURL, using: proxy)
+            }
+            .onChange(of: workspace.tree) { _, _ in
+                guard let pendingScrollURL else { return }
+                requestScroll(to: pendingScrollURL, using: proxy)
             }
         }
-        .onChange(of: workspace.currentFileURL) { _, newURL in
-            if selectedFileURL?.standardizedFileURL != newURL?.standardizedFileURL {
-                selectedFileURL = newURL
+    }
+
+    private func requestScroll(to url: URL?, using proxy: ScrollViewProxy) {
+        guard let target = url?.standardizedFileURL else {
+            pendingScrollURL = nil
+            return
+        }
+        guard WorkspaceTreeNode.contains(target, in: workspace.tree) else {
+            pendingScrollURL = target
+            return
+        }
+
+        pendingScrollURL = nil
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(target, anchor: .center)
             }
         }
     }
@@ -173,6 +209,8 @@ private struct WorkspaceSidebarNode: View {
             WorkspaceSidebarLabel(node: node)
                 .tag(node.url)
                 .contextMenu {
+                    creationContextMenu
+                    Divider()
                     Button("Reveal in Finder", systemImage: "folder") {
                         workspace.revealInFinder(node.url)
                     }
@@ -184,6 +222,8 @@ private struct WorkspaceSidebarNode: View {
             WorkspaceSidebarLabel(node: node)
                 .opacity(0.48)
                 .contextMenu {
+                    creationContextMenu
+                    Divider()
                     Button("Reveal in Finder", systemImage: "folder") {
                         workspace.revealInFinder(node.url)
                     }
@@ -206,7 +246,7 @@ private struct WorkspaceSidebarNode: View {
         Button("New File", systemImage: "doc.badge.plus") {
             workspace.createNewFile(in: node.url)
         }
-        Button("New Folder…", systemImage: "folder.badge.plus") {
+        Button("New Folder", systemImage: "folder.badge.plus") {
             workspace.promptForNewFolder(in: node.url)
         }
         Divider()
@@ -215,6 +255,16 @@ private struct WorkspaceSidebarNode: View {
         }
         Button("Copy Path", systemImage: "doc.on.doc") {
             CopyActions.copyFilePath(node.url)
+        }
+    }
+
+    @ViewBuilder
+    private var creationContextMenu: some View {
+        Button("New File", systemImage: "doc.badge.plus") {
+            workspace.createNewFile(in: node.url.deletingLastPathComponent())
+        }
+        Button("New Folder", systemImage: "folder.badge.plus") {
+            workspace.promptForNewFolder(in: node.url.deletingLastPathComponent())
         }
     }
 }
@@ -232,6 +282,7 @@ private struct WorkspaceSidebarLabel: View {
                 .foregroundStyle(iconColor)
         }
         .frame(minHeight: 20)
+        .id(node.url.standardizedFileURL)
     }
 
     private var iconName: String {
@@ -263,6 +314,12 @@ private struct WorkspaceEmptyDetail: View {
     var body: some View {
         if workspace.rootURL == nil {
             workspaceChooser
+        } else if workspace.isLoadingTree {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if WorkspaceTreeNode.firstEditableFile(in: workspace.tree) != nil {
+            noFileSelected
         } else {
             noMarkdownFiles
         }
@@ -303,6 +360,14 @@ private struct WorkspaceEmptyDetail: View {
         .background(isDropTargeted ? Theme.accentColorSwiftUI.opacity(0.08) : Color.clear)
     }
 
+    private var noFileSelected: some View {
+        ContentUnavailableView {
+            Label("No File Selected", systemImage: "doc.text")
+        } description: {
+            Text("Select a Markdown file in the sidebar, or create a new one.")
+        }
+    }
+
     private var noMarkdownFiles: some View {
         ContentUnavailableView {
             Label("No Markdown Files", systemImage: "doc.text")
@@ -331,12 +396,106 @@ private struct WorkspaceEmptyDetail: View {
 struct WorkspaceWindowObserver: NSViewRepresentable {
     let workspace: WorkspaceManager
 
-    final class Holder {
+    final class Holder: NSObject, NSToolbarDelegate, NSToolbarItemValidation {
+        private static let newFileItemIdentifier = NSToolbarItem.Identifier(
+            "com.sabotage.clearly.workspace.newFile"
+        )
+
         weak var window: NSWindow?
         weak var workspace: WorkspaceManager?
+        private let toolbar = NSToolbar(
+            identifier: NSToolbar.Identifier("workspace.\(UUID().uuidString)")
+        )
+        private var windowUpdateObserver: NSObjectProtocol?
 
         init(workspace: WorkspaceManager) {
             self.workspace = workspace
+            super.init()
+            toolbar.delegate = self
+            toolbar.displayMode = .iconOnly
+            toolbar.allowsUserCustomization = false
+            toolbar.autosavesConfiguration = false
+        }
+
+        deinit {
+            if let windowUpdateObserver {
+                NotificationCenter.default.removeObserver(windowUpdateObserver)
+            }
+        }
+
+        func installToolbar(in window: NSWindow) {
+            if self.window !== window {
+                if let windowUpdateObserver {
+                    NotificationCenter.default.removeObserver(windowUpdateObserver)
+                }
+                self.window = window
+                windowUpdateObserver = NotificationCenter.default.addObserver(
+                    forName: NSWindow.didUpdateNotification,
+                    object: window,
+                    queue: .main
+                ) { [weak self, weak window] _ in
+                    guard let self, let window else { return }
+                    self.installToolbarIfNeeded(in: window)
+                }
+            }
+
+            installToolbarIfNeeded(in: window)
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self, let window else { return }
+                self.installToolbarIfNeeded(in: window)
+            }
+        }
+
+        private func installToolbarIfNeeded(in window: NSWindow) {
+            guard window.toolbar !== toolbar else {
+                toolbar.validateVisibleItems()
+                return
+            }
+            window.toolbar = toolbar
+            window.toolbarStyle = .unified
+        }
+
+        func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+            [
+                .flexibleSpace,
+                Self.newFileItemIdentifier,
+                .toggleSidebar,
+                .sidebarTrackingSeparator,
+            ]
+        }
+
+        func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+            toolbarDefaultItemIdentifiers(toolbar)
+        }
+
+        func toolbar(
+            _ toolbar: NSToolbar,
+            itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+            willBeInsertedIntoToolbar flag: Bool
+        ) -> NSToolbarItem? {
+            guard itemIdentifier == Self.newFileItemIdentifier else { return nil }
+
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "New File"
+            item.paletteLabel = "New File"
+            item.toolTip = "New File"
+            item.image = NSImage(
+                systemSymbolName: "plus",
+                accessibilityDescription: "New File"
+            )
+            item.target = self
+            item.action = #selector(createNewFile(_:))
+            item.isBordered = true
+            item.visibilityPriority = .high
+            return item
+        }
+
+        func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+            item.itemIdentifier != Self.newFileItemIdentifier || workspace?.rootURL != nil
+        }
+
+        @MainActor @objc private func createNewFile(_ sender: NSToolbarItem) {
+            workspace?.createNewFile()
         }
     }
 
@@ -363,7 +522,7 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
     private func register(from view: NSView, context: Context) {
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
-            context.coordinator.window = window
+            context.coordinator.installToolbar(in: window)
             workspace.registerWindow(window)
         }
     }
@@ -374,19 +533,15 @@ struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceManager) private var focusedWorkspace
 
     var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New In Window", systemImage: "plus") {
+                ClearlyAppDelegate.shared?.ensureRegularAndActivate()
+                NSDocumentController.shared.newDocument(nil)
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+
         CommandGroup(after: .newItem) {
-            Button("New Workspace File") {
-                activeWorkspace?.createNewFile()
-            }
-            .disabled(activeWorkspace?.rootURL == nil)
-
-            Button("New Workspace Folder…") {
-                activeWorkspace?.promptForNewFolder()
-            }
-            .disabled(activeWorkspace?.rootURL == nil)
-
-            Divider()
-
             Button("Open…") {
                 openFileOrWorkspace()
             }
