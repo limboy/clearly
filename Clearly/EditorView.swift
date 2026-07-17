@@ -7,6 +7,7 @@ import os
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
+    var fontFamily: String = ContentFontFamily.sfMono.rawValue
     var fileURL: URL?
     var mode: ViewMode
     var positionSyncID: String
@@ -275,16 +276,20 @@ struct EditorView: NSViewRepresentable {
         textView.insertionPointColor = Theme.textColor
         textView.documentURL = fileURL
 
-        // Re-highlight and update typing attributes when appearance or font size changes
+        // Re-highlight and update typing attributes when appearance or typography changes
         let currentScheme = colorScheme
         let currentFontSize = fontSize
-        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize
+        let currentFontFamily = fontFamily
+        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme
+            || context.coordinator.lastFontSize != currentFontSize
+            || context.coordinator.lastFontFamily != currentFontFamily
         if appearanceChanged {
             if count <= 5 {
-                DiagnosticLog.log("updateNSView #\(count): appearance changed (scheme=\(currentScheme), fontSize=\(currentFontSize))")
+                DiagnosticLog.log("updateNSView #\(count): appearance changed (scheme=\(currentScheme), fontSize=\(currentFontSize), fontFamily=\(currentFontFamily))")
             }
             context.coordinator.lastColorScheme = currentScheme
             context.coordinator.lastFontSize = currentFontSize
+            context.coordinator.lastFontFamily = currentFontFamily
             textView.font = Theme.editorFont
 
             let paragraph = NSMutableParagraphStyle()
@@ -372,6 +377,7 @@ struct EditorView: NSViewRepresentable {
         var outlineState: OutlineState?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var lastFontFamily: String?
         var contentWidthEm: CGFloat?
         var cachedFontSize: CGFloat = 12
         var cachedNeedsTrafficLightClearance: Bool = false

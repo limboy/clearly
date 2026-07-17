@@ -28,6 +28,12 @@ public enum PlatformFontWeight {
     case bold
 }
 
+public enum PlatformFontDesign {
+    case sansSerif
+    case serif
+    case monospaced
+}
+
 public enum PlatformDevice {
     /// User-visible device name, used in conflict sibling filenames.
     public static func currentName() -> String {
@@ -50,14 +56,39 @@ public enum PlatformTextAttributes {
 }
 
 public extension PlatformFont {
-    static func clearlyMonospacedSystemFont(ofSize size: CGFloat, weight: PlatformFontWeight) -> PlatformFont {
+    static func clearlySystemFont(
+        ofSize size: CGFloat,
+        weight: PlatformFontWeight,
+        design: PlatformFontDesign
+    ) -> PlatformFont {
         #if os(macOS)
         let platformWeight: NSFont.Weight = weight == .bold ? .bold : .regular
-        return NSFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
+        if design == .monospaced {
+            return NSFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
+        }
+        let base = NSFont.systemFont(ofSize: size, weight: platformWeight)
+        guard design == .serif,
+              let descriptor = base.fontDescriptor.withDesign(.serif),
+              let font = NSFont(descriptor: descriptor, size: size) else {
+            return base
+        }
+        return font
         #else
         let platformWeight: UIFont.Weight = weight == .bold ? .bold : .regular
-        return UIFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
+        if design == .monospaced {
+            return UIFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
+        }
+        let base = UIFont.systemFont(ofSize: size, weight: platformWeight)
+        guard design == .serif,
+              let descriptor = base.fontDescriptor.withDesign(.serif) else {
+            return base
+        }
+        return UIFont(descriptor: descriptor, size: size)
         #endif
+    }
+
+    static func clearlyMonospacedSystemFont(ofSize size: CGFloat, weight: PlatformFontWeight) -> PlatformFont {
+        clearlySystemFont(ofSize: size, weight: weight, design: .monospaced)
     }
 
     /// Returns a font with italic trait applied. Falls back to `self` if unavailable.

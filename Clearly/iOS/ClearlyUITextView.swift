@@ -1,7 +1,7 @@
 import UIKit
 import ClearlyCore
 
-/// UITextView configured for markdown editing: monospaced typing attributes, editor
+/// UITextView configured for markdown editing: user-selected typing attributes, editor
 /// background/tint, autocorrect/smart-quote disabled, vault-appropriate insets.
 /// The highlighter is owned by `EditorView_iOS.Coordinator`, mirroring the Mac pattern
 /// where highlighting is driven by the delegate rather than the view.

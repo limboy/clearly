@@ -14,6 +14,8 @@ struct EditorView_iOS: UIViewRepresentable {
     var documentURL: URL? = nil
     var outlineState: OutlineState? = nil
     var findState: FindState? = nil
+    var fontSize: CGFloat = CGFloat(FontPreferences.defaultEditorSize)
+    var fontFamily: String = ContentFontFamily.sfMono.rawValue
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -44,6 +46,25 @@ struct EditorView_iOS: UIViewRepresentable {
         textView.documentURL = documentURL
         context.coordinator.attachOutlineState(outlineState)
         context.coordinator.attachFindState(findState)
+
+        let typographyChanged = context.coordinator.lastFontSize != fontSize
+            || context.coordinator.lastFontFamily != fontFamily
+        if typographyChanged {
+            context.coordinator.lastFontSize = fontSize
+            context.coordinator.lastFontFamily = fontFamily
+            textView.font = Theme.editorFont
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = Theme.editorLineHeight
+            paragraph.maximumLineHeight = Theme.editorLineHeight
+            textView.typingAttributes = [
+                .font: Theme.editorFont,
+                .foregroundColor: Theme.textColor,
+                .paragraphStyle: paragraph,
+                .baselineOffset: Theme.editorBaselineOffset
+            ]
+            context.coordinator.rerunSyntaxHighlighterForTypography()
+        }
+
         guard context.coordinator.pendingBindingUpdates == 0 else { return }
         // Don't clobber an in-flight IME composition (CJK, predictive text,
         // emoji picker). UIKit's marked text mutates the text view's content
@@ -66,6 +87,8 @@ struct EditorView_iOS: UIViewRepresentable {
         private var lastEditedRange: NSRange?
         private var lastReplacementLength: Int = 0
         private(set) var lastAppliedText: String = ""
+        var lastFontSize: CGFloat?
+        var lastFontFamily: String?
         private var pendingFullHighlightWork: DispatchWorkItem?
         private weak var attachedOutlineState: OutlineState?
         private weak var attachedFindState: FindState?
@@ -360,6 +383,14 @@ struct EditorView_iOS: UIViewRepresentable {
             let wasHighlighting = isHighlighting
             isHighlighting = true
             highlighter.highlightAll(storage, caller: "find-rerun")
+            isHighlighting = wasHighlighting
+        }
+
+        func rerunSyntaxHighlighterForTypography() {
+            guard let textView else { return }
+            let wasHighlighting = isHighlighting
+            isHighlighting = true
+            highlighter.highlightAll(textView.textStorage, caller: "typography")
             isHighlighting = wasHighlighting
         }
 

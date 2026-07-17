@@ -1,26 +1,131 @@
+import Foundation
 import SwiftUI
+
+public enum ContentFontFamily: String, CaseIterable, Sendable {
+    case sanFrancisco
+    case newYork
+    case sfMono
+
+    public var displayName: String {
+        switch self {
+        case .sanFrancisco: return "San Francisco"
+        case .newYork: return "New York"
+        case .sfMono: return "SF Mono"
+        }
+    }
+
+    fileprivate var platformDesign: PlatformFontDesign {
+        switch self {
+        case .sanFrancisco: return .sansSerif
+        case .newYork: return .serif
+        case .sfMono: return .monospaced
+        }
+    }
+
+    fileprivate var swiftUIDesign: Font.Design {
+        switch self {
+        case .sanFrancisco: return .default
+        case .newYork: return .serif
+        case .sfMono: return .monospaced
+        }
+    }
+}
+
+public enum FontPreferences {
+    public static let editorSizeKey = "editorFontSize"
+    public static let editorFamilyKey = "editorFontFamily"
+    public static let previewSizeKey = "previewFontSize"
+    public static let previewFamilyKey = "previewFontFamily"
+
+    public static var defaultEditorSize: Double {
+        #if os(iOS)
+        return 17
+        #else
+        return 12
+        #endif
+    }
+
+    public static var defaultPreviewSize: Double {
+        #if os(iOS)
+        return 18
+        #else
+        return 16
+        #endif
+    }
+
+    private static var legacyPreviewSizeOffset: Double {
+        #if os(iOS)
+        return 2
+        #else
+        return 4
+        #endif
+    }
+
+    /// Splits the legacy shared size into independent editor and preview values
+    /// without changing what an existing user sees after upgrading.
+    public static func migrateLegacySettings(in defaults: UserDefaults = .standard) {
+        if defaults.object(forKey: editorFamilyKey) == nil {
+            defaults.set(ContentFontFamily.sfMono.rawValue, forKey: editorFamilyKey)
+        }
+        if defaults.object(forKey: previewFamilyKey) == nil {
+            defaults.set(ContentFontFamily.sanFrancisco.rawValue, forKey: previewFamilyKey)
+        }
+        if defaults.object(forKey: previewSizeKey) == nil {
+            let previewSize: Double
+            let legacyEditorSize = defaults.double(forKey: editorSizeKey)
+            if defaults.object(forKey: editorSizeKey) != nil, legacyEditorSize > 0 {
+                previewSize = legacyEditorSize + legacyPreviewSizeOffset
+            } else {
+                previewSize = defaultPreviewSize
+            }
+            defaults.set(previewSize, forKey: previewSizeKey)
+        }
+    }
+}
 
 public enum Theme {
     // MARK: - Editor Font
     public static var editorFontSize: CGFloat {
-        let size = UserDefaults.standard.double(forKey: "editorFontSize")
+        let size = UserDefaults.standard.double(forKey: FontPreferences.editorSizeKey)
         if size > 0 { return CGFloat(size) }
-        // Platform-specific defaults. Mac runs at 12pt for dense multi-document
-        // writing; iOS runs at 17pt to match system body-text conventions
-        // (Notes, Mail, Messages) on devices where you can't adjust your eye
-        // distance like you can at a desk.
-#if os(iOS)
-        return 17
-#else
-        return 12
-#endif
+        return CGFloat(FontPreferences.defaultEditorSize)
+    }
+
+    public static var editorFontFamily: ContentFontFamily {
+        let rawValue = UserDefaults.standard.string(forKey: FontPreferences.editorFamilyKey)
+        return ContentFontFamily(rawValue: rawValue ?? "") ?? .sfMono
     }
 
     public static var editorFont: PlatformFont {
-        PlatformFont.clearlyMonospacedSystemFont(ofSize: editorFontSize, weight: .regular)
+        makeEditorFont(size: editorFontSize)
     }
 
-    public static var editorFontSwiftUI: Font { Font.system(size: editorFontSize, design: .monospaced) }
+    public static var editorHeadingFont: PlatformFont {
+        makeEditorFont(size: editorFontSize + 4, weight: .bold)
+    }
+
+    public static var editorBoldFont: PlatformFont {
+        makeEditorFont(size: editorFontSize, weight: .bold)
+    }
+
+    public static var editorBoldItalicFont: PlatformFont {
+        makeEditorFont(size: editorFontSize, weight: .bold).withItalicTrait()
+    }
+
+    public static var editorFontSwiftUI: Font {
+        Font.system(size: editorFontSize, design: editorFontFamily.swiftUIDesign)
+    }
+
+    private static func makeEditorFont(
+        size: CGFloat,
+        weight: PlatformFontWeight = .regular
+    ) -> PlatformFont {
+        PlatformFont.clearlySystemFont(
+            ofSize: size,
+            weight: weight,
+            design: editorFontFamily.platformDesign
+        )
+    }
 
     // MARK: - Margins
     public static let editorInsetX: CGFloat = 60

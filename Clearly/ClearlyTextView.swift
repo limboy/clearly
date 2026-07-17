@@ -65,11 +65,12 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
     // MARK: - Print
 
     override func printView(_ sender: Any?) {
-        let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
-        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
+        let fontSize = UserDefaults.standard.double(forKey: FontPreferences.previewSizeKey)
+        let fontFamily = UserDefaults.standard.string(forKey: FontPreferences.previewFamilyKey)
+            ?? ContentFontFamily.sanFrancisco.rawValue
         PDFExporter().printHTML(
             markdown: string,
-            fontSize: CGFloat(fontSize > 0 ? fontSize : Theme.editorFontSize),
+            fontSize: CGFloat(fontSize > 0 ? fontSize : FontPreferences.defaultPreviewSize),
             fontFamily: fontFamily,
             fileURL: documentURL
         )

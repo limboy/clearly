@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct ScratchpadShellView: View {
     @Environment(ScratchpadManager.self) private var manager
@@ -7,7 +8,8 @@ struct ScratchpadShellView: View {
 
     @State private var text: String = ""
     @State private var loadedNoteID: ScratchpadNote.ID?
-    @AppStorage("editorFontSize") private var fontSize: Double = 12
+    @AppStorage(FontPreferences.editorSizeKey) private var fontSize = FontPreferences.defaultEditorSize
+    @AppStorage(FontPreferences.editorFamilyKey) private var fontFamily = ContentFontFamily.sfMono.rawValue
 
     var body: some View {
         @Bindable var bindableManager = manager
@@ -18,6 +20,7 @@ struct ScratchpadShellView: View {
                 ScratchpadEditorView(
                     text: $text,
                     fontSize: CGFloat(fontSize),
+                    fontFamily: fontFamily,
                     onSave: { manager.saveCurrentAsDocument() },
                     onTextChange: { newText in
                         guard let note = manager.currentNote else { return }
@@ -137,4 +140,3 @@ struct ScratchpadTitlebarBar: View {
         }
     }
 }
-

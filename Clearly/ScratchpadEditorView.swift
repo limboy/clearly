@@ -20,6 +20,7 @@ final class ScratchpadTextView: PersistentTextCheckingTextView {
 struct ScratchpadEditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
+    var fontFamily: String = ContentFontFamily.sfMono.rawValue
     var onSave: (() -> Void)?
     var onTextChange: ((String) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
@@ -98,10 +99,14 @@ struct ScratchpadEditorView: NSViewRepresentable {
 
         let currentScheme = colorScheme
         let currentFontSize = fontSize
-        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize
+        let currentFontFamily = fontFamily
+        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme
+            || context.coordinator.lastFontSize != currentFontSize
+            || context.coordinator.lastFontFamily != currentFontFamily
         if appearanceChanged {
             context.coordinator.lastColorScheme = currentScheme
             context.coordinator.lastFontSize = currentFontSize
+            context.coordinator.lastFontFamily = currentFontFamily
             textView.font = Theme.editorFont
 
             let paragraph = NSMutableParagraphStyle()
@@ -141,6 +146,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         weak var textView: NSTextView?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var lastFontFamily: String?
         var onSave: (() -> Void)?
         var lastEditedRange: NSRange?
         var lastReplacementLength: Int = 0

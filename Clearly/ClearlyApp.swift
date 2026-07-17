@@ -397,6 +397,7 @@ struct ClearlyApp: App {
     #endif
 
     init() {
+        FontPreferences.migrateLegacySettings()
         DiagnosticLog.trimIfNeeded()
         DiagnosticLog.log("App launched")
         #if canImport(Sparkle)
@@ -730,16 +731,26 @@ struct ViewModeCommands: View {
 }
 
 struct FontSizeCommands: View {
-    @AppStorage("editorFontSize") private var fontSize: Double = 12
+    @FocusedValue(\.viewMode) private var mode
+    @AppStorage(FontPreferences.editorSizeKey) private var editorFontSize = FontPreferences.defaultEditorSize
+    @AppStorage(FontPreferences.previewSizeKey) private var previewFontSize = FontPreferences.defaultPreviewSize
 
     var body: some View {
         Button("Increase Font Size") {
-            fontSize = min(fontSize + 1, 24)
+            if mode?.wrappedValue == .preview {
+                previewFontSize = min(previewFontSize + 1, 28)
+            } else {
+                editorFontSize = min(editorFontSize + 1, 24)
+            }
         }
         .keyboardShortcut("+", modifiers: .command)
 
         Button("Decrease Font Size") {
-            fontSize = max(fontSize - 1, 12)
+            if mode?.wrappedValue == .preview {
+                previewFontSize = max(previewFontSize - 1, 12)
+            } else {
+                editorFontSize = max(editorFontSize - 1, 12)
+            }
         }
         .keyboardShortcut("-", modifiers: .command)
     }
