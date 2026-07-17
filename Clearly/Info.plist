@@ -56,7 +56,7 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://clearly.md/appcast.xml</string>
+	<string>https://github.com/limboy/clearly/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>o8jzukyqfSKFb3ppXwfo/xQEacOtmomFBzJXidd5n7Y=</string>
 	<key>SUScheduledCheckInterval</key>

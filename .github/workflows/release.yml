@@ -56,7 +56,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" build/Clearly.dmg \
+            gh release upload "$GITHUB_REF_NAME" build/Clearly.dmg build/appcast.xml \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
             gh release edit "$GITHUB_REF_NAME" \
@@ -64,7 +64,7 @@ jobs:
               --title "Clearly $GITHUB_REF_NAME" \
               --notes-file build/release-notes.md
           else
-            gh release create "$GITHUB_REF_NAME" build/Clearly.dmg \
+            gh release create "$GITHUB_REF_NAME" build/Clearly.dmg build/appcast.xml \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --title "Clearly $GITHUB_REF_NAME" \

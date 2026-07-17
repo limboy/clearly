@@ -26,6 +26,7 @@ if [ "${1:-}" = "--dry-run" ]; then
 fi
 
 VERSION="${1:?Usage: ./scripts/release.sh [--dry-run] <version>}"
+REPOSITORY="${GITHUB_REPOSITORY:-limboy/clearly}"
 
 # Extract changelog entries for a version and convert to HTML <ul>
 extract_changelog() {
@@ -262,11 +263,11 @@ cat > build/appcast.xml << APPCAST
       <title>Version $VERSION</title>
       <sparkle:version>$VERSION</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <pubDate>$PUB_DATE</pubDate>
 $DESC_ELEMENT
       <enclosure
-        url="https://github.com/Shpigford/clearly/releases/download/v$VERSION/Clearly.dmg"
+        url="https://github.com/$REPOSITORY/releases/download/v$VERSION/Clearly.dmg"
         sparkle:edSignature="$ED_SIG"
         length="$LENGTH"
         type="application/octet-stream"
@@ -282,19 +283,21 @@ cp build/appcast.xml website/appcast.xml
 source "$SCRIPT_DIR/lib/changelog-html.sh"
 generate_changelog_html
 git add website/appcast.xml website/changelog.html
-git commit -m "chore: update appcast for v$VERSION" || true
+git commit -m "[chore] Update appcast for v$VERSION" || true
 git push
 
 echo "🚀 Creating GitHub Release..."
 CHANGELOG_MD=$(extract_changelog_markdown "$VERSION" "CHANGELOG.md")
 if [ -n "$CHANGELOG_MD" ]; then
-  gh release create "v$VERSION" build/Clearly.dmg \
+  gh release create "v$VERSION" build/Clearly.dmg build/appcast.xml \
+    --repo "$REPOSITORY" \
     --title "Clearly v$VERSION" \
     --notes "$CHANGELOG_MD"
 else
-  gh release create "v$VERSION" build/Clearly.dmg \
+  gh release create "v$VERSION" build/Clearly.dmg build/appcast.xml \
+    --repo "$REPOSITORY" \
     --title "Clearly v$VERSION" \
     --generate-notes
 fi
 
-echo "✅ Done! Release: https://github.com/Shpigford/clearly/releases/tag/v$VERSION"
+echo "✅ Done! Release: https://github.com/$REPOSITORY/releases/tag/v$VERSION"
