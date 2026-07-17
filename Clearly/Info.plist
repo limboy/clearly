@@ -58,7 +58,7 @@
 	<key>SUFeedURL</key>
 	<string>https://clearly.md/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>I1gi82QlV84mZZXMzxJyVMFKpDCmcatBYVSGcq1nJgE=</string>
+	<string>o8jzukyqfSKFb3ppXwfo/xQEacOtmomFBzJXidd5n7Y=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>UTExportedTypeDeclarations</key>
