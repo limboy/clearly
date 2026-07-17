@@ -68,6 +68,7 @@ struct SettingsView: View {
             Picker("On Launch", selection: $launchBehavior) {
                 Text("Create new document").tag("newDocument")
                 Text("Open last file").tag("lastFile")
+                Text("Open last workspace").tag("lastWorkspace")
                 Text("Show file picker").tag("filePicker")
                 Text("Do nothing").tag("nothing")
             }

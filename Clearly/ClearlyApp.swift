@@ -55,16 +55,18 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         DiagnosticLog.log("didFinishLaunching: launchBehavior=\(launchBehavior), keepRunning=\(keepRunningMenubarOnly), docs=\(NSDocumentController.shared.documents.count)")
 
         // SwiftUI's `DocumentGroup` launcher will appear at launch for any
-        // `launchBehavior` that doesn't itself open a document — "filePicker"
+        // `launchBehavior` that doesn't itself open a window — "filePicker"
         // (we return false from `applicationOpenUntitledFile`) and "nothing"
-        // (we return true but no doc opens). When the launcher dismisses,
+        // (we return true but no window opens). When the launcher dismisses,
         // both `applicationShouldTerminate` and
         // `applicationShouldTerminateAfterLastWindowClosed` fire and would
         // terminate the app before the user-picked document finishes
         // loading. Set the panel flag now so the defer logic in those
         // methods can hold quit off until the doc arrives.
-        let launchBehaviorWillOpenDoc = launchBehavior == "newDocument" || launchBehavior == "lastFile"
-        if !launchBehaviorWillOpenDoc && NSDocumentController.shared.documents.isEmpty {
+        let launchBehaviorWillOpenWindow = launchBehavior == "newDocument"
+            || launchBehavior == "lastFile"
+            || launchBehavior == "lastWorkspace"
+        if !launchBehaviorWillOpenWindow && NSDocumentController.shared.documents.isEmpty {
             isDocumentPanelPresented = true
             DiagnosticLog.log("didFinishLaunching: set isDocumentPanelPresented=true")
         }
@@ -109,6 +111,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             }
             do { try NSDocumentController.shared.openUntitledDocumentAndDisplay(true) }
             catch { return false }
+            return true
+        case "lastWorkspace":
+            // The workspace Window scene is presented by its
+            // `defaultLaunchBehavior`; suppress the document launcher.
             return true
         case "nothing":
             // Claim we handled it so the system doesn't show its own panel.
@@ -389,6 +395,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
+    @AppStorage("launchBehavior") private var launchBehavior = "filePicker"
     @State private var scratchpadManager = ScratchpadManager.shared
     @State private var scratchpadStore = ScratchpadStore.shared
 
@@ -423,6 +430,7 @@ struct ClearlyApp: App {
                 .preferredColorScheme(resolvedColorScheme)
         }
         .defaultSize(width: 800, height: 900)
+        .defaultLaunchBehavior(launchBehavior == "lastWorkspace" ? .suppressed : .automatic)
         .commands {
             CommandGroup(after: .appInfo) {
                 #if canImport(Sparkle)
@@ -474,6 +482,7 @@ struct ClearlyApp: App {
                 .preferredColorScheme(resolvedColorScheme)
         }
         .defaultSize(width: 1120, height: 780)
+        .defaultLaunchBehavior(launchBehavior == "lastWorkspace" ? .presented : .suppressed)
 
         Settings {
             #if canImport(Sparkle)
