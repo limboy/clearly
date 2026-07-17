@@ -446,22 +446,6 @@ struct ClearlyApp: App {
             OpenWorkspaceCommands()
             EditorCommands()
             CommandGroup(replacing: .help) {
-                Button("Clearly Help") {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
-                }
-                Button("Report a Bug…") {
-                    let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
-                    let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
-                    let url = BugReportURL.build(
-                        appVersion: "\(version) (\(build))",
-                        osVersion: ProcessInfo.processInfo.operatingSystemVersionString
-                    )
-                    NSWorkspace.shared.open(url)
-                }
-                Button("What's New…") {
-                    NSWorkspace.shared.open(URL(string: "https://clearly.md/changelog")!)
-                }
-                Divider()
                 Button("Sample Document") {
                     openSampleDocument()
                 }
