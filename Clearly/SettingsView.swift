@@ -43,8 +43,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 460)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 460, height: 380)
         .background(SettingsWindowObserver())
         .background {
             Button("") { dismiss() }
@@ -183,18 +182,6 @@ private struct AboutView: View {
             Text("Version \(version) (\(build))")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Divider()
-                .padding(.horizontal, 60)
-            VStack(spacing: 4) {
-                Link("Website", destination: URL(string: "https://clearly.md")!)
-                Link("Changelog", destination: URL(string: "https://clearly.md/changelog")!)
-                Link("Report a Bug", destination: URL(string: "https://github.com/Shpigford/clearly/issues")!)
-            }
-            .font(.callout)
-            Text("© Sabotage Media")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
