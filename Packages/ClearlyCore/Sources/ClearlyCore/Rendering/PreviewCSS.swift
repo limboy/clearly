@@ -315,8 +315,8 @@ public enum PreviewCSS {
             bodyFontFamily = "\"New York\", \"Iowan Old Style\", Georgia, serif"
             headingFontFamily = "\"New York\", \"Iowan Old Style\", Georgia, serif"
         case "sfMono":
-            bodyFontFamily = "\"SF Mono\", SFMono-Regular, Menlo, monospace"
-            headingFontFamily = "\"SF Mono\", SFMono-Regular, Menlo, monospace"
+            bodyFontFamily = "ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, monospace"
+            headingFontFamily = "ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, monospace"
         default:
             bodyFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
             headingFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
@@ -400,7 +400,7 @@ public enum PreviewCSS {
             padding: 40px 64px 80px;
             color: var(--c-text);
             background-color: var(--c-bg);
-            -webkit-font-smoothing: antialiased;
+            -webkit-font-smoothing: auto;
         }
 
         h1, h2, h3, h4, h5, h6 {
@@ -515,7 +515,7 @@ public enum PreviewCSS {
         }
 
         code {
-            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
             font-size: 0.875em;
             background-color: var(--c-code-bg);
             color: var(--c-code-fg);
@@ -524,7 +524,7 @@ public enum PreviewCSS {
         }
 
         .code-filename {
-            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
             font-size: 0.8em;
             padding: 0.5em 1.25em;
             background: var(--c-code-filename-bg);
@@ -663,7 +663,7 @@ public enum PreviewCSS {
 
         .code-fold-summary {
             display: none;
-            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
             font-size: 0.8em;
             padding: 1.125em 1.25em;
             background-color: var(--c-pre-bg);
@@ -927,7 +927,7 @@ public enum PreviewCSS {
         }
         .callout-icon { flex-shrink: 0; }
         .callout-content > *:last-child { margin-bottom: 0; }
-        .callout-content blockquote { border-left: none; padding-left: 0; color: inherit; }
+        .callout-content blockquote { border-left: none; padding-left: 1.25em; color: inherit; }
 
         details.callout > summary { cursor: pointer; list-style: none; }
         details.callout > summary::-webkit-details-marker { display: none; }

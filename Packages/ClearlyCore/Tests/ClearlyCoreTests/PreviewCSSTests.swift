@@ -56,6 +56,20 @@ final class PreviewCSSTests: XCTestCase {
                       "print media query should contain a :root block")
     }
 
+    func testPreviewUsesSystemFontSmoothingAndSystemMonospace() {
+        let sheet = PreviewCSS.css(fontFamily: ContentFontFamily.sfMono.rawValue)
+        XCTAssertTrue(sheet.contains("-webkit-font-smoothing: auto;"))
+        XCTAssertTrue(sheet.contains("font-family: ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, monospace;"))
+        XCTAssertFalse(sheet.contains("-webkit-font-smoothing: antialiased;"))
+    }
+
+    func testCalloutBlockquoteKeepsLeftPadding() {
+        let sheet = PreviewCSS.css()
+        XCTAssertTrue(sheet.contains(
+            ".callout-content blockquote { border-left: none; padding-left: 1.25em; color: inherit; }"
+        ))
+    }
+
     // MARK: - Palette value checks (ensures light/dark/print match pre-tokenization values)
 
     func testLightPaletteValuesMatchPreTokenizationPreview() {
