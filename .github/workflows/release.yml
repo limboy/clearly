@@ -71,20 +71,6 @@ jobs:
               --notes-file build/release-notes.md
           fi
 
-      - name: Update Sparkle appcast
-        run: |
-          cp build/appcast.xml website/appcast.xml
-          bash scripts/lib/changelog-html.sh
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add website/appcast.xml website/changelog.html
-
-          if ! git diff --cached --quiet; then
-            git commit -m "[chore] Update appcast for $GITHUB_REF_NAME"
-            git push origin HEAD:main
-          fi
-
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4

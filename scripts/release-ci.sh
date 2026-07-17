@@ -294,19 +294,6 @@ while IFS= read -r line; do
 done <<< "$release_notes"
 html_notes+="</ul>"
 
-existing_items="$(
-  awk -v version="$VERSION" '
-    /<item>/ { buffer=""; capture=1 }
-    capture { buffer = buffer $0 "\n" }
-    /<\/item>/ {
-      capture=0
-      marker="<sparkle:version>" version "</sparkle:version>"
-      if (index(buffer, marker) == 0) {
-        printf "%s", buffer
-      }
-    }
-  ' website/appcast.xml
-)"
 pub_date="$(date -u '+%a, %d %b %Y %H:%M:%S +0000')"
 repository="${GITHUB_REPOSITORY:-limboy/clearly}"
 
@@ -329,7 +316,6 @@ cat > build/appcast.xml <<APPCAST
         type="application/octet-stream"
       />
     </item>
-$existing_items
   </channel>
 </rss>
 APPCAST

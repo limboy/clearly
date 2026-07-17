@@ -1,6 +1,6 @@
 ---
 name: release
-description: Determine the next version, update the marketing site, and run the full Mac release pipeline.
+description: Determine the next version and run the GitHub Actions Mac release pipeline.
 ---
 
 Cut a new Mac release of Clearly. See `AGENTS.md` "Versioning" and "Commit message rule". This skill derives the version from the Mac tag history and runs the release pipeline.
@@ -9,14 +9,19 @@ Cut a new Mac release of Clearly. See `AGENTS.md` "Versioning" and "Commit messa
 
 ### Step 1: Verify prerequisites
 
-1. `.env` exists at the project root. If not, stop and tell the user:
-   "Missing `.env` file. Copy `.env.example` to `.env` and fill in APPLE_TEAM_ID, APPLE_ID, and SIGNING_IDENTITY_NAME."
-2. `notarytool` keychain profile `AC_PASSWORD` works. If not, stop and tell the user to run:
-   ```bash
-   xcrun notarytool store-credentials "AC_PASSWORD" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "<app-specific-password>"
-   ```
+1. GitHub CLI authentication works (`gh auth status`).
+2. The repository has all secrets required by `.github/workflows/release.yml`. Check names with `gh secret list`; never print secret values:
+   - `APPLE_TEAM_ID`
+   - `ASC_ISSUER_ID`
+   - `ASC_KEY_ID`
+   - `ASC_PRIVATE_KEY`
+   - `MACOS_CERTIFICATE_P12_BASE64`
+   - `SIGNING_IDENTITY_NAME`
+   - `SPARKLE_ED_PRIVATE_KEY`
+   - `MACOS_CERTIFICATE_PASSWORD` is optional when the exported P12 has no password.
 3. Working tree clean (`git status --porcelain`). If dirty, stop and ask the user to commit or stash.
 4. On the `main` branch. If not, stop.
+5. Pull the latest `origin/main` with `git pull --ff-only` before preparing the release.
 
 ### Step 2: Determine the next version
 
@@ -73,25 +78,31 @@ If "Use a different version", ask for the version. If "Cancel", stop.
 ### Step 4: Update version strings
 
 1. Edit `project.yml`. Update `MARKETING_VERSION` in both targets: `Clearly` and `ClearlyQuickLook`.
-2. Edit `website/index.html`. Update the `class="requires"` line — match the existing minimum-macOS wording, do not hardcode a name:
-   ```html
-   <p class="requires">v<VERSION> &middot; Requires macOS Sequoia or later</p>
-   ```
-3. Commit:
+2. Commit and push the changelog and version update:
    ```bash
-   git add project.yml website/index.html CHANGELOG.md
-   git commit -m "[mac] Update marketing site version to v<VERSION>"
-   git push
+   git add project.yml CHANGELOG.md
+   git commit -m "[mac] Prepare v<VERSION> release"
+   git push origin main
    ```
 
-### Step 5: Run the release script
+### Step 5: Trigger and monitor the GitHub release
 
 ```bash
-./scripts/release.sh <VERSION>
+git tag "v<VERSION>"
+git push origin "v<VERSION>"
 ```
-Handles: xcodegen → archive → export → DMG → notarize → staple → git tag `v<VERSION>` → appcast → push → GitHub Release.
 
-Let the script run to completion. On failure, report the error and stop. Do NOT retry automatically.
+The tag triggers `.github/workflows/release.yml`, which runs `scripts/release-ci.sh` and handles: xcodegen → archive → export → DMG → notarize → staple → latest-only Sparkle appcast → GitHub Release.
+
+Find the run whose `headSha` matches the tag and watch it to completion:
+
+```bash
+gh run list --workflow release.yml --event push --limit 5 \
+  --json databaseId,headSha,status,conclusion,url
+gh run watch <RUN_ID> --exit-status
+```
+
+On failure, inspect the failed step and report the root cause. Do NOT retry automatically.
 
 ### Step 6: App Store submission (optional)
 
@@ -152,14 +163,14 @@ git push
 
 Tell the user:
 - Version released
-- Link: `https://github.com/Shpigford/clearly/releases/tag/v<VERSION>`
+- Link: `https://github.com/limboy/clearly/releases/tag/v<VERSION>`
 - Whether App Store submission was included
 
 ## Important Rules
 
 - ALWAYS confirm the version before proceeding
-- NEVER run a release script if `.env` is missing or the working tree is dirty
+- NEVER tag a release if the working tree is dirty or `main` has not been pushed
 - NEVER skip the changelog update
-- If the release script fails, do NOT blindly retry. Report the error and stop. Retry is only okay after the root cause is identified and fixed (e.g., a bug in the script, a missing credential, a stale file). Never retry on an unexplained or transient-looking failure without diagnosing it first.
-- The release scripts handle git tagging — do not duplicate those steps
+- If the GitHub Actions run fails, do NOT blindly retry. Report the error and stop. Retry is only okay after the root cause is identified and fixed (e.g., a bug in the script or a missing credential). Never retry on an unexplained or transient-looking failure without diagnosing it first.
+- The tag-triggered GitHub Actions workflow is the canonical publishing path. `scripts/release.sh --dry-run` remains available for local build verification; do not run the local publishing path after pushing a release tag.
 - Un-scoped commits (no `[mac]`/`[chore]` prefix) halt the release until resolved

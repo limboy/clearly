@@ -235,19 +235,6 @@ if [ -z "$RELEASE_NOTES" ]; then
   echo "⚠️  No changelog entry for v$VERSION in CHANGELOG.md. Appcast will have no release notes."
 fi
 
-# Preserve existing items from current appcast (exclude current version if re-releasing)
-EXISTING_ITEMS=""
-if [ -f website/appcast.xml ]; then
-  EXISTING_ITEMS=$(awk '
-    /<item>/ { buf=""; capture=1 }
-    capture { buf = buf $0 "\n" }
-    /<\/item>/ {
-      capture=0
-      if (buf !~ /<sparkle:version>'"$VERSION"'</) printf "%s", buf
-    }
-  ' website/appcast.xml)
-fi
-
 # Build description element if we have release notes
 DESC_ELEMENT=""
 if [ -n "$RELEASE_NOTES" ]; then
@@ -273,18 +260,9 @@ $DESC_ELEMENT
         type="application/octet-stream"
       />
     </item>
-$EXISTING_ITEMS
   </channel>
 </rss>
 APPCAST
-
-echo "📡 Updating site appcast..."
-cp build/appcast.xml website/appcast.xml
-source "$SCRIPT_DIR/lib/changelog-html.sh"
-generate_changelog_html
-git add website/appcast.xml website/changelog.html
-git commit -m "[chore] Update appcast for v$VERSION" || true
-git push
 
 echo "🚀 Creating GitHub Release..."
 CHANGELOG_MD=$(extract_changelog_markdown "$VERSION" "CHANGELOG.md")

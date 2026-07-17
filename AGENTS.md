@@ -6,7 +6,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 The `/release` skill builds the changelog by filtering commits on a scope prefix, so every commit MUST start with one:
 
-- `[mac]` — user-visible product changes. Paths: `Clearly/`, `ClearlyQuickLook/`, `Packages/ClearlyCore/`, `Shared/Resources/`, `project.yml`, release scripts, `website/`.
+- `[mac]` — user-visible product changes. Paths: `Clearly/`, `ClearlyQuickLook/`, `Packages/ClearlyCore/`, `Shared/Resources/`, `project.yml`, release scripts.
 - `[chore]` — dev tooling, docs, CI, meta. Excluded from the user-facing changelog. Paths: `AGENTS.md`, `.github/`, `docs/`, `.Codex/`, test harnesses, non-release scripts.
 
 The release skill halts if it sees an un-scoped commit in the release range.
@@ -108,7 +108,7 @@ The `.md` QuickLook preview, Finder column-view preview, and "default app for `.
 
 The Mac app ships through two channels from the same codebase:
 
-1. **Direct (Sparkle)** — `scripts/release.sh` → DMG + notarize + GitHub Release + Sparkle appcast.
+1. **Direct (Sparkle)** — push a `v<VERSION>` tag → `.github/workflows/release.yml` runs `scripts/release-ci.sh` → DMG + notarization + GitHub Release + latest-only Sparkle appcast asset. Use `scripts/release.sh --dry-run` for local build verification.
 2. **App Store** — `scripts/release-appstore.sh` → archive without Sparkle + upload to App Store Connect.
 
 **Conditional compilation:** All Sparkle code is wrapped in `#if canImport(Sparkle)`. The App Store build uses a modified `project.yml` (generated at build time by the release script) that removes the Sparkle package, so `canImport(Sparkle)` is false and update-related code compiles out.
