@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://apps.apple.com/app/clearly-markdown/id6760669470">Mac App Store</a> &middot;
-  <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg">Direct Download</a> &middot;
+  <a href="https://github.com/limboy/clearly/releases/latest/download/Clearly.dmg">Direct Download</a> &middot;
   <a href="https://clearly.md">Website</a> &middot;
   <a href="https://x.com/Shpigford">@Shpigford</a>
 </p>
@@ -17,7 +17,9 @@
   <img src="website/screenshots/screenshot-1.jpg" width="720" alt="Clearly — markdown editor with live preview" />
 </p>
 
-Open a `.md` file. Write with syntax highlighting. Toggle to preview. That's it. Native macOS, no Electron, no subscriptions, no telemetry.
+Open a Markdown file or a folder workspace. Write with syntax highlighting. Toggle to preview. That's it. Native macOS, no Electron, no subscriptions, no telemetry.
+
+This repository is forked from [Shpigford/clearly](https://github.com/Shpigford/clearly.git).
 
 ## Features
 
@@ -25,10 +27,19 @@ Open a `.md` file. Write with syntax highlighting. Toggle to preview. That's it.
 
 - **Syntax highlighting** — headings, bold, italic, links, code blocks, tables, highlighted as you type
 - **Format shortcuts** — ⌘B bold, ⌘I italic, ⌘K links, plus a full Format menu
-- **Extended markdown** — ==highlights==, ^superscript^, ~subscript~, :emoji: shortcodes, `[TOC]` generation
+- **Extended markdown** — ==highlights==, ^superscript^, ~subscript~, :emoji: shortcodes, wikilinks, `[TOC]` generation
+- **Unified typography** — one font family and size setting for both the editor and preview
 - **Document outline** — heading tree per document, click to jump
 - **Find & replace** — ⌘F with regex and case-sensitive options
 - **Scratchpad** — menu-bar floating notes with a global hotkey
+
+### Files and workspaces
+
+- **Standalone documents** — open individual Markdown files in native document windows
+- **Folder workspaces** — browse a folder tree and edit its Markdown and text files in a single workspace window
+- **Workspace file management** — create files and folders, copy paths, and reveal items in Finder from the sidebar
+- **Autosave and restoration** — workspaces remember the folder, expanded directories, and active file; optionally reopen the last workspace at launch
+- **External changes** — standalone documents automatically reload when another app updates them
 
 ### Preview
 
@@ -67,7 +78,7 @@ Dependencies (cmark-gfm, Sparkle, KeyboardShortcuts) are pulled automatically by
 ## Quick Start
 
 ```bash
-git clone https://github.com/Shpigford/clearly.git
+git clone https://github.com/limboy/clearly.git
 cd clearly
 brew install xcodegen    # skip if already installed
 xcodegen generate        # generates Clearly.xcodeproj from project.yml
@@ -88,12 +99,14 @@ xcodebuild -scheme Clearly -configuration Debug build
 
 ```
 Clearly/
-├── ClearlyApp.swift                # @main — DocumentGroup + menu commands (⌘1/⌘2)
+├── ClearlyApp.swift                # @main — document, workspace, settings, and scratchpad scenes
 ├── MarkdownDocument.swift          # FileDocument conformance for .md files
 ├── ContentView.swift               # Per-document scene root (Mac)
 ├── EditorView.swift                # NSViewRepresentable wrapping NSTextView
 ├── ClearlyTextView.swift           # Subclassed NSTextView with formatting actions
 ├── PreviewView.swift               # NSViewRepresentable wrapping WKWebView
+├── WorkspaceManager.swift          # Folder access, tree refresh, selection, and autosave
+├── WorkspaceView.swift             # Workspace sidebar + shared editor/preview surface
 ├── ScratchpadManager.swift         # Menu-bar floating scratchpad windows
 └── SettingsView.swift              # General + About preferences
 
@@ -104,7 +117,7 @@ ClearlyQuickLook/
 Packages/ClearlyCore/               # Local macOS SwiftPM package shared by app + QuickLook
 └── Sources/ClearlyCore/
     ├── Rendering/                  # MarkdownRenderer, syntax highlighter, theme, mermaid/math/table support
-    ├── State/                      # OpenDocument, OutlineState, FindState, JumpToLineState, StatusBarState
+    ├── State/                      # Document state, find/replace, outline, and workspace tree models
     ├── Editor/                     # ImagePasteService, ImageDownloader
     ├── Diagnostics/                # DiagnosticLog, BugReportURL
     ├── Stats/                      # MarkdownStats (word counts)
@@ -118,16 +131,20 @@ project.yml                         # xcodegen config (source of truth)
 
 ## Architecture
 
-**SwiftUI + AppKit**, with one window per document.
+**SwiftUI + AppKit**, with standalone document windows and an optional folder workspace window.
 
 ### Targets
 
-1. **Clearly** — `DocumentGroup` with `MarkdownDocument`. AppKit `NSTextView` editor + `WKWebView` preview, both bridged via `NSViewRepresentable`. Includes a menu-bar `MenuBarExtra` for floating scratchpads.
+1. **Clearly** — a `DocumentGroup` for standalone Markdown files plus a separate workspace `Window` for folder-based editing. Both use the same AppKit `NSTextView` editor and `WKWebView` preview bridged through `NSViewRepresentable`. The app also includes a menu-bar `MenuBarExtra` for floating scratchpads.
 2. **ClearlyQuickLook** — Finder extension for previewing `.md` files with Space, sharing `MarkdownRenderer` from `ClearlyCore`.
 
 ### Editor
 
-Wraps `NSTextView` via `NSViewRepresentable`. This provides native undo/redo, the system find UI, and `NSTextStorageDelegate`-based syntax highlighting on every keystroke.
+`ContentView` hosts the shared editing surface for both standalone documents and the active workspace file. It wraps `NSTextView` via `NSViewRepresentable`, providing native undo/redo and `NSTextStorageDelegate`-based syntax highlighting on every keystroke.
+
+### Workspace
+
+`WorkspaceManager` keeps security-scoped access to one folder, builds a bounded file tree, monitors it with FSEvents, and autosaves the active text buffer. `WorkspaceView` combines that tree with the existing editor, preview, outline, find, and export features without introducing a vault index or background content database.
 
 ### Preview
 
@@ -144,6 +161,8 @@ Wraps `NSTextView` via `NSViewRepresentable`. This provides native undo/redo, th
 ### Key Decisions
 
 - **AppKit bridge** — `NSTextView` over `TextEditor` for undo, find, and `NSTextStorageDelegate` syntax highlighting
+- **Two opening modes** — use `DocumentGroup` for standalone files and a dedicated scene for one folder workspace
+- **Shared content surface** — standalone documents and workspaces reuse `ContentView` instead of maintaining separate editors
 - **Dynamic theming** — all colors through `Theme.swift` with `NSColor(name:)` for automatic light/dark
 - **Shared rendering** — `MarkdownRenderer` and `PreviewCSS` live in `ClearlyCore` and compile into the app and QuickLook
 - **Dual distribution** — Sparkle for direct, App Store without. All Sparkle code wrapped in `#if canImport(Sparkle)`
@@ -169,7 +188,7 @@ Follow the `MathSupport`/`MermaidSupport` pattern: create a `*Support.swift` enu
 swift test --package-path Packages/ClearlyCore
 ```
 
-Runs the rendering, find/replace, outline, and stats unit suites. UI code in `Clearly/` and `ClearlyQuickLook/` is verified by running the app, not unit-tested.
+Runs the rendering, find/replace, outline, workspace-tree, font-preference, and stats unit suites. UI code in `Clearly/` and `ClearlyQuickLook/` is verified by running the app, not unit-tested.
 
 ## License
 
