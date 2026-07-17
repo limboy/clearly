@@ -12,10 +12,8 @@ struct DocumentDetailBody: View {
     @State private var showOutline = false
     @StateObject private var outlineState = OutlineState()
     @StateObject private var findState = FindState()
-    @AppStorage(FontPreferences.editorSizeKey) private var editorFontSize = FontPreferences.defaultEditorSize
-    @AppStorage(FontPreferences.editorFamilyKey) private var editorFontFamily = ContentFontFamily.sfMono.rawValue
-    @AppStorage(FontPreferences.previewSizeKey) private var previewFontSize = FontPreferences.defaultPreviewSize
-    @AppStorage(FontPreferences.previewFamilyKey) private var previewFontFamily = ContentFontFamily.sanFrancisco.rawValue
+    @AppStorage(FontPreferences.sizeKey) private var fontSize = FontPreferences.defaultSize
+    @AppStorage(FontPreferences.familyKey) private var fontFamily = FontPreferences.defaultFamily.rawValue
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview: Bool = false
 
     var body: some View {
@@ -80,8 +78,8 @@ struct DocumentDetailBody: View {
                 documentURL: fileURL,
                 outlineState: outlineState,
                 findState: findState,
-                fontSize: CGFloat(editorFontSize),
-                fontFamily: editorFontFamily
+                fontSize: CGFloat(fontSize),
+                fontFamily: fontFamily
             )
             .opacity(viewMode == .edit ? 1 : 0)
             .allowsHitTesting(viewMode == .edit)
@@ -89,8 +87,8 @@ struct DocumentDetailBody: View {
             PreviewView_iOS(
                 markdown: document.text,
                 fileURL: fileURL,
-                fontSize: CGFloat(previewFontSize),
-                fontFamily: previewFontFamily,
+                fontSize: CGFloat(fontSize),
+                fontFamily: fontFamily,
                 hideFrontmatter: hideFrontmatterInPreview,
                 isVisible: viewMode == .preview,
                 onTaskToggle: handleTaskToggle

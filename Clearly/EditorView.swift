@@ -6,8 +6,8 @@ import os
 
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
-    var fontSize: CGFloat = 16
-    var fontFamily: String = ContentFontFamily.sfMono.rawValue
+    var fontSize: CGFloat = CGFloat(FontPreferences.defaultSize)
+    var fontFamily: String = FontPreferences.defaultFamily.rawValue
     var fileURL: URL?
     var mode: ViewMode
     var positionSyncID: String

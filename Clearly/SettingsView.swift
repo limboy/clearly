@@ -11,10 +11,8 @@ struct SettingsView: View {
     let updater: SPUUpdater
     #endif
 
-    @AppStorage(FontPreferences.editorSizeKey) private var editorFontSize = FontPreferences.defaultEditorSize
-    @AppStorage(FontPreferences.editorFamilyKey) private var editorFontFamily = ContentFontFamily.sfMono.rawValue
-    @AppStorage(FontPreferences.previewSizeKey) private var previewFontSize = FontPreferences.defaultPreviewSize
-    @AppStorage(FontPreferences.previewFamilyKey) private var previewFontFamily = ContentFontFamily.sanFrancisco.rawValue
+    @AppStorage(FontPreferences.sizeKey) private var fontSize = FontPreferences.defaultSize
+    @AppStorage(FontPreferences.familyKey) private var fontFamily = FontPreferences.defaultFamily.rawValue
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("contentWidth") private var contentWidth = "off"
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
@@ -78,31 +76,16 @@ struct SettingsView: View {
                 Text("Preview").tag("preview")
             }
 
-            Picker("Editor Font", selection: $editorFontFamily) {
+            Picker("Font", selection: $fontFamily) {
                 ForEach(ContentFontFamily.allCases, id: \.rawValue) { family in
                     Text(family.displayName).tag(family.rawValue)
                 }
             }
 
             HStack {
-                Text("Editor Font Size")
-                Slider(value: $editorFontSize, in: 12...24, step: 1)
-                Text("\(Int(editorFontSize))")
-                    .font(.system(size: 13, weight: .medium))
-                    .monospacedDigit()
-                    .frame(width: 30, alignment: .trailing)
-            }
-
-            Picker("Preview Font", selection: $previewFontFamily) {
-                ForEach(ContentFontFamily.allCases, id: \.rawValue) { family in
-                    Text(family.displayName).tag(family.rawValue)
-                }
-            }
-
-            HStack {
-                Text("Preview Font Size")
-                Slider(value: $previewFontSize, in: 12...28, step: 1)
-                Text("\(Int(previewFontSize))")
+                Text("Font Size")
+                Slider(value: $fontSize, in: 12...28, step: 1)
+                Text("\(Int(fontSize))")
                     .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
                     .frame(width: 30, alignment: .trailing)

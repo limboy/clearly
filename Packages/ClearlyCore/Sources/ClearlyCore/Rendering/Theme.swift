@@ -32,12 +32,11 @@ public enum ContentFontFamily: String, CaseIterable, Sendable {
 }
 
 public enum FontPreferences {
-    public static let editorSizeKey = "editorFontSize"
-    public static let editorFamilyKey = "editorFontFamily"
-    public static let previewSizeKey = "previewFontSize"
-    public static let previewFamilyKey = "previewFontFamily"
+    public static let sizeKey = "contentFontSize"
+    public static let familyKey = "contentFontFamily"
+    public static let defaultFamily = ContentFontFamily.sfMono
 
-    public static var defaultEditorSize: Double {
+    public static var defaultSize: Double {
         #if os(iOS)
         return 17
         #else
@@ -45,55 +44,48 @@ public enum FontPreferences {
         #endif
     }
 
-    public static var defaultPreviewSize: Double {
-        #if os(iOS)
-        return 18
-        #else
-        return 16
-        #endif
-    }
-
-    private static var legacyPreviewSizeOffset: Double {
-        #if os(iOS)
-        return 2
-        #else
-        return 4
-        #endif
-    }
-
-    /// Splits the legacy shared size into independent editor and preview values
-    /// without changing what an existing user sees after upgrading.
+    /// Consolidates older editor/preview preferences into one content font.
+    /// Editor values win when the independent settings exist; the original
+    /// preview-family key remains a fallback for pre-split installs.
     public static func migrateLegacySettings(in defaults: UserDefaults = .standard) {
-        if defaults.object(forKey: editorFamilyKey) == nil {
-            defaults.set(ContentFontFamily.sfMono.rawValue, forKey: editorFamilyKey)
+        if defaults.object(forKey: sizeKey) == nil {
+            let legacySize = defaults.double(forKey: "editorFontSize")
+            defaults.set(legacySize > 0 ? legacySize : defaultSize, forKey: sizeKey)
         }
-        if defaults.object(forKey: previewFamilyKey) == nil {
-            defaults.set(ContentFontFamily.sanFrancisco.rawValue, forKey: previewFamilyKey)
+
+        if defaults.object(forKey: familyKey) == nil {
+            let legacyFamily = [
+                defaults.string(forKey: "editorFontFamily"),
+                defaults.string(forKey: "previewFontFamily")
+            ]
+            .compactMap { $0 }
+            .compactMap(ContentFontFamily.init(rawValue:))
+            .first ?? defaultFamily
+            defaults.set(legacyFamily.rawValue, forKey: familyKey)
         }
-        if defaults.object(forKey: previewSizeKey) == nil {
-            let previewSize: Double
-            let legacyEditorSize = defaults.double(forKey: editorSizeKey)
-            if defaults.object(forKey: editorSizeKey) != nil, legacyEditorSize > 0 {
-                previewSize = legacyEditorSize + legacyPreviewSizeOffset
-            } else {
-                previewSize = defaultPreviewSize
-            }
-            defaults.set(previewSize, forKey: previewSizeKey)
+    }
+
+    public static func fontSize(in defaults: UserDefaults = .standard) -> CGFloat {
+        let size = defaults.double(forKey: sizeKey)
+        return size > 0 ? CGFloat(size) : CGFloat(defaultSize)
+    }
+
+    public static func fontFamily(in defaults: UserDefaults = .standard) -> ContentFontFamily {
+        guard let rawValue = defaults.string(forKey: familyKey) else {
+            return defaultFamily
         }
+        return ContentFontFamily(rawValue: rawValue) ?? defaultFamily
     }
 }
 
 public enum Theme {
     // MARK: - Editor Font
     public static var editorFontSize: CGFloat {
-        let size = UserDefaults.standard.double(forKey: FontPreferences.editorSizeKey)
-        if size > 0 { return CGFloat(size) }
-        return CGFloat(FontPreferences.defaultEditorSize)
+        FontPreferences.fontSize()
     }
 
     public static var editorFontFamily: ContentFontFamily {
-        let rawValue = UserDefaults.standard.string(forKey: FontPreferences.editorFamilyKey)
-        return ContentFontFamily(rawValue: rawValue ?? "") ?? .sfMono
+        FontPreferences.fontFamily()
     }
 
     public static var editorFont: PlatformFont {

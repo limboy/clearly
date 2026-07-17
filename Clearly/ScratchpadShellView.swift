@@ -8,8 +8,8 @@ struct ScratchpadShellView: View {
 
     @State private var text: String = ""
     @State private var loadedNoteID: ScratchpadNote.ID?
-    @AppStorage(FontPreferences.editorSizeKey) private var fontSize = FontPreferences.defaultEditorSize
-    @AppStorage(FontPreferences.editorFamilyKey) private var fontFamily = ContentFontFamily.sfMono.rawValue
+    @AppStorage(FontPreferences.sizeKey) private var fontSize = FontPreferences.defaultSize
+    @AppStorage(FontPreferences.familyKey) private var fontFamily = FontPreferences.defaultFamily.rawValue
 
     var body: some View {
         @Bindable var bindableManager = manager

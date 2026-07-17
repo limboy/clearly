@@ -18,8 +18,8 @@ struct PreviewView_iOS: UIViewRepresentable {
     init(
         markdown: String,
         fileURL: URL?,
-        fontSize: CGFloat = 18,
-        fontFamily: String = "sanFrancisco",
+        fontSize: CGFloat = CGFloat(FontPreferences.defaultSize),
+        fontFamily: String = FontPreferences.defaultFamily.rawValue,
         hideFrontmatter: Bool = false,
         isVisible: Bool = true,
         onTaskToggle: ((Int, Bool) -> Void)? = nil

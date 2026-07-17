@@ -22,8 +22,8 @@ private final class DraggableWKWebView: WKWebView {
 
 struct PreviewView: NSViewRepresentable {
     let markdown: String
-    var fontSize: CGFloat = 18
-    var fontFamily: String = "sanFrancisco"
+    var fontSize: CGFloat = CGFloat(FontPreferences.defaultSize)
+    var fontFamily: String = FontPreferences.defaultFamily.rawValue
     var mode: ViewMode
     var positionSyncID: String
     var fileURL: URL?

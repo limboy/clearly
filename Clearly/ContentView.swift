@@ -18,10 +18,8 @@ struct ContentView: View {
     @StateObject private var jumpToLineState = JumpToLineState()
     @StateObject private var statusBarState = StatusBarState()
 
-    @AppStorage(FontPreferences.editorSizeKey) private var editorFontSize = FontPreferences.defaultEditorSize
-    @AppStorage(FontPreferences.editorFamilyKey) private var editorFontFamily = ContentFontFamily.sfMono.rawValue
-    @AppStorage(FontPreferences.previewSizeKey) private var previewFontSize = FontPreferences.defaultPreviewSize
-    @AppStorage(FontPreferences.previewFamilyKey) private var previewFontFamily = ContentFontFamily.sanFrancisco.rawValue
+    @AppStorage(FontPreferences.sizeKey) private var fontSize = FontPreferences.defaultSize
+    @AppStorage(FontPreferences.familyKey) private var fontFamily = FontPreferences.defaultFamily.rawValue
     @AppStorage("contentWidth") private var contentWidth: String = "off"
     @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
     @AppStorage("alwaysShowBottomToolbar") private var alwaysShowBottomToolbar: Bool = false
@@ -171,8 +169,8 @@ struct ContentView: View {
         ZStack {
             EditorView(
                 text: $text,
-                fontSize: CGFloat(editorFontSize),
-                fontFamily: editorFontFamily,
+                fontSize: CGFloat(fontSize),
+                fontFamily: fontFamily,
                 fileURL: fileURL,
                 mode: viewMode,
                 positionSyncID: positionSyncID,
@@ -189,8 +187,8 @@ struct ContentView: View {
 
             PreviewView(
                 markdown: text,
-                fontSize: CGFloat(previewFontSize),
-                fontFamily: previewFontFamily,
+                fontSize: CGFloat(fontSize),
+                fontFamily: fontFamily,
                 mode: viewMode,
                 positionSyncID: positionSyncID,
                 fileURL: fileURL,
@@ -227,8 +225,8 @@ struct ContentView: View {
     private func exportPDF() {
         PDFExporter().exportPDF(
             markdown: text,
-            fontSize: CGFloat(previewFontSize),
-            fontFamily: previewFontFamily,
+            fontSize: CGFloat(fontSize),
+            fontFamily: fontFamily,
             fileURL: fileURL
         )
     }
@@ -236,8 +234,8 @@ struct ContentView: View {
     private func printDocument() {
         PDFExporter().printHTML(
             markdown: text,
-            fontSize: CGFloat(previewFontSize),
-            fontFamily: previewFontFamily,
+            fontSize: CGFloat(fontSize),
+            fontFamily: fontFamily,
             fileURL: fileURL
         )
     }

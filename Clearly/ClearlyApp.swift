@@ -356,32 +356,32 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Preview Font submenu under View.
+    /// Shared editor/preview font submenu under View.
     private func injectFontSubmenu() {
         guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
-        guard !viewMenu.items.contains(where: { $0.title == "Preview Font" }) else { return }
+        guard !viewMenu.items.contains(where: { $0.title == "Font" }) else { return }
 
-        let fontSubmenu = NSMenu(title: "Preview Font")
+        let fontSubmenu = NSMenu(title: "Font")
         for (title, value) in [("San Francisco", "sanFrancisco"), ("New York", "newYork"), ("SF Mono", "sfMono")] {
-            let item = NSMenuItem(title: title, action: #selector(setPreviewFontAction(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: title, action: #selector(setFontAction(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = value
             fontSubmenu.addItem(item)
         }
-        let fontMenuItem = NSMenuItem(title: "Preview Font", action: nil, keyEquivalent: "")
+        let fontMenuItem = NSMenuItem(title: "Font", action: nil, keyEquivalent: "")
         fontMenuItem.submenu = fontSubmenu
         viewMenu.addItem(.separator())
         viewMenu.addItem(fontMenuItem)
     }
 
-    @objc private func setPreviewFontAction(_ sender: NSMenuItem) {
+    @objc private func setFontAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
-        UserDefaults.standard.set(value, forKey: "previewFontFamily")
+        UserDefaults.standard.set(value, forKey: FontPreferences.familyKey)
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(setPreviewFontAction(_:)) {
-            let current = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
+        if menuItem.action == #selector(setFontAction(_:)) {
+            let current = FontPreferences.fontFamily().rawValue
             menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
             return true
         }
@@ -740,26 +740,16 @@ struct ViewModeCommands: View {
 }
 
 struct FontSizeCommands: View {
-    @FocusedValue(\.viewMode) private var mode
-    @AppStorage(FontPreferences.editorSizeKey) private var editorFontSize = FontPreferences.defaultEditorSize
-    @AppStorage(FontPreferences.previewSizeKey) private var previewFontSize = FontPreferences.defaultPreviewSize
+    @AppStorage(FontPreferences.sizeKey) private var fontSize = FontPreferences.defaultSize
 
     var body: some View {
         Button("Increase Font Size") {
-            if mode?.wrappedValue == .preview {
-                previewFontSize = min(previewFontSize + 1, 28)
-            } else {
-                editorFontSize = min(editorFontSize + 1, 24)
-            }
+            fontSize = min(fontSize + 1, 28)
         }
         .keyboardShortcut("+", modifiers: .command)
 
         Button("Decrease Font Size") {
-            if mode?.wrappedValue == .preview {
-                previewFontSize = max(previewFontSize - 1, 12)
-            } else {
-                editorFontSize = max(editorFontSize - 1, 12)
-            }
+            fontSize = max(fontSize - 1, 12)
         }
         .keyboardShortcut("-", modifiers: .command)
     }

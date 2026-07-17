@@ -14,8 +14,8 @@ struct EditorView_iOS: UIViewRepresentable {
     var documentURL: URL? = nil
     var outlineState: OutlineState? = nil
     var findState: FindState? = nil
-    var fontSize: CGFloat = CGFloat(FontPreferences.defaultEditorSize)
-    var fontFamily: String = ContentFontFamily.sfMono.rawValue
+    var fontSize: CGFloat = CGFloat(FontPreferences.defaultSize)
+    var fontFamily: String = FontPreferences.defaultFamily.rawValue
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
