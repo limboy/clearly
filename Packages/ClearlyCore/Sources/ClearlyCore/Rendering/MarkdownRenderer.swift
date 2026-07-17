@@ -560,25 +560,79 @@ public enum MarkdownRenderer {
 
     private static func processCallouts(_ html: String) -> String {
         guard html.contains("[!") else { return html }
-        // Match blockquote containing [!TYPE] at the start.
-        // Group 5 captures title on the same line as [!TYPE].
-        // Group 6 captures remaining content inside the first <p> (may span newlines).
-        // Group 7 captures content after the first </p>.
-        guard let regex = try? NSRegularExpression(
-            pattern: #"<blockquote([^>]*)>\s*<p([^>]*)>\[!([\w]+)\](-?)[ \t]*([^\n]*)\n?([\s\S]*?)</p>([\s\S]*?)</blockquote>"#,
+        // A single regex cannot balance nested <blockquote> tags. Locate each opening
+        // tag, find its depth-matched closing tag, then inspect the first paragraph
+        // for the [!TYPE] marker.
+        guard let openingRegex = try? NSRegularExpression(
+            pattern: #"<blockquote((?:\s[^>]*)?)>"#,
+            options: [.caseInsensitive]
+        ), let tagRegex = try? NSRegularExpression(
+            pattern: #"</?blockquote(?:\s[^>]*)?>"#,
+            options: [.caseInsensitive]
+        ), let firstParagraphRegex = try? NSRegularExpression(
+            pattern: #"^\s*<p(?:\s[^>]*)?>([\s\S]*?)</p>"#,
+            options: [.caseInsensitive]
+        ), let markerRegex = try? NSRegularExpression(
+            pattern: #"^\[!([\w]+)\](-?)[ \t]*(.*)$"#,
             options: []
         ) else { return html }
-        let ns = html as NSString
-        var result = ""
-        var lastEnd = 0
-        for match in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
-            result += ns.substring(with: NSRange(location: lastEnd, length: match.range.location - lastEnd))
-            let bqAttrs = ns.substring(with: match.range(at: 1))
-            let typeStr = ns.substring(with: match.range(at: 3)).lowercased()
-            let foldable = ns.substring(with: match.range(at: 4)) == "-"
-            let titleText = ns.substring(with: match.range(at: 5)).trimmingCharacters(in: .whitespaces)
-            let firstParaContent = ns.substring(with: match.range(at: 6)).trimmingCharacters(in: .whitespacesAndNewlines)
-            let restContent = ns.substring(with: match.range(at: 7))
+
+        var result = html
+        var searchLocation = 0
+
+        while searchLocation < (result as NSString).length {
+            let ns = result as NSString
+            let searchRange = NSRange(location: searchLocation, length: ns.length - searchLocation)
+            guard let openingMatch = openingRegex.firstMatch(in: result, range: searchRange) else { break }
+
+            let openingEnd = NSMaxRange(openingMatch.range)
+            guard let closingRange = matchingBlockquoteClose(
+                in: result,
+                after: openingEnd,
+                tagRegex: tagRegex
+            ) else { break }
+
+            let innerRange = NSRange(location: openingEnd, length: closingRange.location - openingEnd)
+            let innerHTML = ns.substring(with: innerRange)
+            let innerNS = innerHTML as NSString
+            let fullInnerRange = NSRange(location: 0, length: innerNS.length)
+
+            guard let paragraphMatch = firstParagraphRegex.firstMatch(in: innerHTML, range: fullInnerRange) else {
+                searchLocation = openingEnd
+                continue
+            }
+
+            let paragraphHTML = innerNS.substring(with: paragraphMatch.range(at: 1))
+            let paragraphNS = paragraphHTML as NSString
+            let newlineRange = paragraphNS.range(of: "\n")
+            let firstLineRange = newlineRange.location == NSNotFound
+                ? NSRange(location: 0, length: paragraphNS.length)
+                : NSRange(location: 0, length: newlineRange.location)
+            let firstLine = paragraphNS.substring(with: firstLineRange)
+            let firstLineNS = firstLine as NSString
+            let markerRange = NSRange(location: 0, length: firstLineNS.length)
+
+            guard let markerMatch = markerRegex.firstMatch(in: firstLine, range: markerRange) else {
+                // This blockquote is not a callout, but a nested one still may be.
+                searchLocation = openingEnd
+                continue
+            }
+
+            let bqAttrs = ns.substring(with: openingMatch.range(at: 1))
+            let typeStr = firstLineNS.substring(with: markerMatch.range(at: 1)).lowercased()
+            let foldable = firstLineNS.substring(with: markerMatch.range(at: 2)) == "-"
+            let titleText = firstLineNS.substring(with: markerMatch.range(at: 3))
+                .trimmingCharacters(in: .whitespaces)
+
+            let firstParaContent: String
+            if newlineRange.location == NSNotFound {
+                firstParaContent = ""
+            } else {
+                let contentLocation = NSMaxRange(newlineRange)
+                firstParaContent = paragraphNS.substring(from: contentLocation)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let restContent = innerNS.substring(from: NSMaxRange(paragraphMatch.range))
 
             let info = calloutTypes[typeStr] ?? ("\u{2139}\u{FE0F}", typeStr.capitalized)
             let displayTitle = titleText.isEmpty ? info.label : titleText
@@ -589,26 +643,56 @@ public enum MarkdownRenderer {
                 contentHTML += "<p>\(firstParaContent)</p>"
             }
             contentHTML += restContent
+            contentHTML = processCallouts(contentHTML)
 
+            let replacement: String
             if foldable {
-                result += """
+                replacement = """
                 <details class="callout callout-\(typeStr)"\(bqAttrs)>\
                 <summary class="callout-title"><span class="callout-icon">\(info.icon)</span> \
                 <span class="callout-title-text">\(displayTitle)</span></summary>\
                 <div class="callout-content">\(contentHTML)</div></details>
                 """
             } else {
-                result += """
+                replacement = """
                 <div class="callout callout-\(typeStr)"\(bqAttrs)>\
                 <div class="callout-title"><span class="callout-icon">\(info.icon)</span> \
                 <span class="callout-title-text">\(displayTitle)</span></div>\
                 <div class="callout-content">\(contentHTML)</div></div>
                 """
             }
-            lastEnd = match.range.location + match.range.length
+
+            let calloutRange = NSRange(
+                location: openingMatch.range.location,
+                length: NSMaxRange(closingRange) - openingMatch.range.location
+            )
+            result = ns.replacingCharacters(in: calloutRange, with: replacement)
+            searchLocation = calloutRange.location + (replacement as NSString).length
         }
-        result += ns.substring(from: lastEnd)
+
         return result
+    }
+
+    private static func matchingBlockquoteClose(
+        in html: String,
+        after openingEnd: Int,
+        tagRegex: NSRegularExpression
+    ) -> NSRange? {
+        let ns = html as NSString
+        var depth = 1
+        let range = NSRange(location: openingEnd, length: ns.length - openingEnd)
+
+        for match in tagRegex.matches(in: html, range: range) {
+            let tag = ns.substring(with: match.range).lowercased()
+            if tag.hasPrefix("</") {
+                depth -= 1
+                if depth == 0 { return match.range }
+            } else {
+                depth += 1
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Table of Contents
