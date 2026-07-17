@@ -7,17 +7,15 @@
 <p align="center">A native markdown editor for Mac.</p>
 
 <p align="center">
-  <a href="https://apps.apple.com/app/clearly-markdown/id6760669470">Mac App Store</a> &middot;
   <a href="https://github.com/limboy/clearly/releases/latest/download/Clearly.dmg">Direct Download</a> &middot;
-  <a href="https://clearly.md">Website</a> &middot;
-  <a href="https://x.com/Shpigford">@Shpigford</a>
 </p>
 
 <p align="center">
-  <img src="website/screenshots/screenshot-1.jpg" width="720" alt="Clearly — markdown editor with live preview" />
+  <img src="assets/screenshot.webp" width="720" alt="" />
 </p>
 
 Open a Markdown file or a folder workspace. Write with syntax highlighting. Toggle to preview. That's it. Native macOS, no Electron, no subscriptions, no telemetry.
+
 
 This repository is forked from [Shpigford/clearly](https://github.com/Shpigford/clearly.git).
 
@@ -54,17 +52,6 @@ This repository is forked from [Shpigford/clearly](https://github.com/Shpigford/
 
 - **QuickLook** — preview `.md` files in Finder with Space
 - **PDF export** — export or print, page breaks handled
-
-## Screenshots
-
-<p>
-  <img src="website/screenshots/screenshot-2-alt.jpg" width="360" alt="" />
-  <img src="website/screenshots/screenshot-3.jpg" width="360" alt="" />
-</p>
-<p>
-  <img src="website/screenshots/screenshot-4.jpg" width="360" alt="" />
-  <img src="website/screenshots/screenshot-5-alt.jpg" width="360" alt="" />
-</p>
 
 ## Prerequisites
 
@@ -124,7 +111,6 @@ Packages/ClearlyCore/               # Local macOS SwiftPM package shared by app 
     └── Platform/                   # PlatformFont/Color/Image typealiases
 
 Shared/Resources/                   # Bundled JS/CSS (KaTeX, Mermaid, Highlight.js), demo.md
-website/                            # Static site deployed to clearly.md
 scripts/                            # Release pipeline
 project.yml                         # xcodegen config (source of truth)
 ```
