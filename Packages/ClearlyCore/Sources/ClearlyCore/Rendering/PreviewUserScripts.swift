@@ -1,7 +1,7 @@
 import Foundation
 import WebKit
 
-/// Shared user scripts injected into both Mac and iOS preview WKWebViews.
+/// User scripts injected into the app and QuickLook preview WKWebViews.
 /// These run at `atDocumentEnd` after each `loadHTMLString`, walking the
 /// rendered DOM to install the code-block chrome (copy + fold buttons),
 /// stamp heading-scoped fold keys, and wire postMessage handlers.

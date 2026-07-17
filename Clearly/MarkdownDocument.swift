@@ -8,8 +8,8 @@ extension UTType {
     static let daringFireballMarkdown: UTType = UTType("net.daringfireball.markdown") ?? UTType(filenameExtension: "md") ?? .plainText
 }
 
-/// `FileDocument` for `.md` files. Owned by `DocumentGroup` on both Mac and iOS;
-/// reading/writing the file goes through SwiftUI's document plumbing.
+/// `FileDocument` for `.md` files. Reading and writing go through SwiftUI's
+/// `DocumentGroup` plumbing.
 struct MarkdownDocument: FileDocument {
     static var readableContentTypes: [UTType] = [.daringFireballMarkdown, .plainText]
     static var writableContentTypes: [UTType] = [.daringFireballMarkdown]

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "ClearlyCore",
-    platforms: [.macOS(.v15), .iOS(.v17)],
+    platforms: [.macOS(.v15)],
     products: [
         .library(name: "ClearlyCore", targets: ["ClearlyCore"]),
     ],

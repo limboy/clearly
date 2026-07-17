@@ -1,63 +1,38 @@
 ---
 name: release
-description: Determine the next version, update the marketing site, and run the full release pipeline for Mac or iOS.
+description: Determine the next version, update the marketing site, and run the full Mac release pipeline.
 ---
 
-Cut a new release of Clearly. Mac and iOS ship independently — see `CLAUDE.md` "Versioning" and "Commit message rule". This skill picks a platform, derives the version from that platform's git tag history, and runs the matching release pipeline.
+Cut a new Mac release of Clearly. See `CLAUDE.md` "Versioning" and "Commit message rule". This skill derives the version from the Mac tag history and runs the release pipeline.
 
 ## Instructions
 
-### Step 0: Pick the platform
-
-Ask with `mcp__conductor__AskUserQuestion`:
-- question: "Which platform is this release for?"
-- header: "Release platform"
-- multiSelect: false
-- options:
-  - "Mac (Sparkle + optional App Store)"
-  - "iOS (TestFlight)"
-  - "Both (Mac first, then iOS)"
-
-If "Both", run the Mac flow end-to-end, then the iOS flow. If either platform fails, stop — do NOT auto-continue to the other.
-
-When running "Both", the un-scoped commit range on iOS overlaps Mac's (older commits show up in both `<latest-mac-tag>..HEAD` and `<latest-ios-tag>..HEAD`). If the user already answered "proceed anyway" for those commits on the Mac flow, do NOT re-ask on iOS — inherit the answer. Only ask again if iOS has *new* un-scoped commits that Mac's range didn't include.
-
 ### Step 1: Verify prerequisites
 
-Mac flow:
 1. `.env` exists at the project root. If not, stop and tell the user:
    "Missing `.env` file. Copy `.env.example` to `.env` and fill in APPLE_TEAM_ID, APPLE_ID, and SIGNING_IDENTITY_NAME."
 2. `notarytool` keychain profile `AC_PASSWORD` works. If not, stop and tell the user to run:
    ```bash
    xcrun notarytool store-credentials "AC_PASSWORD" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "<app-specific-password>"
    ```
-
-iOS flow:
-1. `.env` exists and contains `APPLE_TEAM_ID`.
-
-Both flows:
 3. Working tree clean (`git status --porcelain`). If dirty, stop and ask the user to commit or stash.
 4. On the `main` branch. If not, stop.
 
 ### Step 2: Determine the next version
 
-Pick the tag query and commit filter based on platform:
-
-| Platform | Latest tag query | Commit scope filter |
-|---|---|---|
-| Mac | `git tag -l 'v*' \| grep -vE '^ios-' \| sort -V \| tail -1` | `^\[(mac\|shared)\]` |
-| iOS | `git tag -l 'ios-v*' \| sort -V \| tail -1` | `^\[(ios\|shared)\]` |
-
 Steps:
-1. Get the latest tag for the platform (above).
+1. Get the latest tag:
+   ```bash
+   git tag -l 'v*' | sort -V | tail -1
+   ```
 2. Get commits since that tag:
    ```bash
    git log <latest_tag>..HEAD --oneline --format='%s'
    ```
-3. **Un-scoped commit guard.** If ANY commit in that range does NOT start with `[mac]`, `[ios]`, `[shared]`, or `[chore]`, stop and list those commits to the user:
+3. **Un-scoped commit guard.** If ANY commit in that range does NOT start with `[mac]` or `[chore]`, stop and list those commits to the user:
    > "Found commits without a scope prefix. Fix with `git commit --amend` or `git rebase -i` before releasing, or tell me to proceed anyway (commits will fall through the filter and may land in the wrong changelog)."
    Use `mcp__conductor__AskUserQuestion` to ask whether to halt or proceed anyway.
-4. Filter commits with the platform's scope regex. If zero commits match after filtering, stop: "No commits scoped to <platform> since <tag>. Nothing to release." (Note: raw-range commits may still exist — they're for the *other* platform.)
+4. Filter commits with `^\[mac\]`. If zero commits match after filtering, stop: "No Mac product commits since <tag>. Nothing to release."
 5. Apply semver logic to the scoped commit list:
    - Any commit containing `feat:` or `feat(` after the scope → **minor** bump
    - All commits are `fix:` / `chore:` / `docs:` style → **patch** bump
@@ -70,7 +45,7 @@ Steps:
 
 ### Step 3: Confirm the version
 
-Confirm before proceeding. Show the tag (`v<VERSION>` for Mac, `ios-v<VERSION>` for iOS) and the scoped commit list. Use `mcp__conductor__AskUserQuestion`:
+Confirm before proceeding. Show the tag (`v<VERSION>`) and the scoped commit list. Use `mcp__conductor__AskUserQuestion`:
 - question: "Release as <TAG>? Commits included:\n<scoped commit list>"
 - header: "Confirm release"
 - multiSelect: false
@@ -82,10 +57,6 @@ Confirm before proceeding. Show the tag (`v<VERSION>` for Mac, `ios-v<VERSION>` 
 If "Use a different version", ask for the version. If "Cancel", stop.
 
 ### Step 3.5: Update the changelog
-
-Changelog file depends on platform:
-- Mac → `CHANGELOG.md`
-- iOS → `CHANGELOG-iOS.md`
 
 1. Check if the changelog has an `## [Unreleased]` section with content.
 2. If `## [Unreleased]` is empty or missing, draft entries from the **scoped** commit list (same regex used above):
@@ -101,10 +72,7 @@ Changelog file depends on platform:
 
 ### Step 4: Update version strings
 
-Updates depend on platform:
-
-**Mac:**
-1. Edit `project.yml`. Update `MARKETING_VERSION` in all three Mac-side targets: `Clearly`, `ClearlyQuickLook`, `ClearlyCLI`. Do NOT touch `Clearly-iOS`.
+1. Edit `project.yml`. Update `MARKETING_VERSION` in both targets: `Clearly` and `ClearlyQuickLook`.
 2. Edit `website/index.html`. Update the `class="requires"` line — match the existing minimum-macOS wording, do not hardcode a name:
    ```html
    <p class="requires">v<VERSION> &middot; Requires macOS Sequoia or later</p>
@@ -116,35 +84,16 @@ Updates depend on platform:
    git push
    ```
 
-**iOS:**
-1. Edit `project.yml`. Update `MARKETING_VERSION` in the `Clearly-iOS` target only. Do NOT touch the Mac-side targets.
-2. No website edit (iOS isn't on the marketing site yet).
-3. Commit:
-   ```bash
-   git add project.yml CHANGELOG-iOS.md
-   git commit -m "[ios] Update iOS version to v<VERSION>"
-   git push
-   ```
-
 ### Step 5: Run the release script
 
-**Mac:**
 ```bash
 ./scripts/release.sh <VERSION>
 ```
 Handles: xcodegen → archive → export → DMG → notarize → staple → git tag `v<VERSION>` → appcast → push → GitHub Release.
 
-**iOS:**
-```bash
-./scripts/release-ios.sh <VERSION>
-```
-Handles: xcodegen → archive → upload to App Store Connect (→ TestFlight) → git tag `ios-v<VERSION>` → push tag.
+Let the script run to completion. On failure, report the error and stop. Do NOT retry automatically.
 
-Let each script run to completion. On failure, report the error and stop. Do NOT retry automatically.
-
-### Step 6: App Store submission (Mac only, optional)
-
-iOS stops at TestFlight for now — no App Store submission step.
+### Step 6: App Store submission (optional)
 
 For Mac, after the Sparkle release succeeds, ask:
 - question: "Sparkle release complete. Also submit v<VERSION> to the App Store?"
@@ -202,19 +151,15 @@ git push
 ```
 
 Tell the user:
-- Platform and version released
-- Link:
-  - Mac: `https://github.com/Shpigford/clearly/releases/tag/v<VERSION>`
-  - iOS: no public release page; direct the user to App Store Connect → TestFlight
-- Whether App Store submission was included (Mac only)
+- Version released
+- Link: `https://github.com/Shpigford/clearly/releases/tag/v<VERSION>`
+- Whether App Store submission was included
 
 ## Important Rules
 
 - ALWAYS confirm the version before proceeding
 - NEVER run a release script if `.env` is missing or the working tree is dirty
 - NEVER skip the changelog update
-- NEVER update both `CHANGELOG.md` and `CHANGELOG-iOS.md` in the same release — one platform, one changelog
-- NEVER bump Mac `MARKETING_VERSION` entries during an iOS release (and vice versa)
 - If the release script fails, do NOT blindly retry. Report the error and stop. Retry is only okay after the root cause is identified and fixed (e.g., a bug in the script, a missing credential, a stale file). Never retry on an unexplained or transient-looking failure without diagnosing it first.
 - The release scripts handle git tagging — do not duplicate those steps
-- Un-scoped commits (no `[mac]`/`[ios]`/`[shared]`/`[chore]` prefix) halt the release until resolved
+- Un-scoped commits (no `[mac]`/`[chore]` prefix) halt the release until resolved

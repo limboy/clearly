@@ -1,9 +1,5 @@
 import Foundation
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 public enum ImageDownloadError: Error {
     case invalidResponse
@@ -19,8 +15,8 @@ public enum ImageDownloader {
 
     /// Fetches `url` and returns PNG-encoded bytes. Validates the response's
     /// `Content-Type` starts with `image/`, enforces a 20 MB cap, and
-    /// re-encodes via the platform image decoder so HEIC/WebP/etc. all
-    /// normalize to PNG for cross-platform rendering in WKWebView.
+    /// re-encodes via the system image decoder so HEIC/WebP/etc. all
+    /// normalize to PNG for reliable rendering in WKWebView.
     public static func fetchImagePNG(from url: URL) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -35,7 +31,6 @@ public enum ImageDownloader {
         return try encodePNG(from: data)
     }
 
-    #if os(macOS)
     private static func encodePNG(from data: Data) throws -> Data {
         // Route through NSImage so ImageIO decodes HEIC/WebP/etc., then
         // NSBitmapImageRep re-encodes from TIFF.
@@ -47,12 +42,4 @@ public enum ImageDownloader {
         }
         return png
     }
-    #else
-    private static func encodePNG(from data: Data) throws -> Data {
-        guard let image = UIImage(data: data), let png = image.pngData() else {
-            throw ImageDownloadError.decodeFailed
-        }
-        return png
-    }
-    #endif
 }

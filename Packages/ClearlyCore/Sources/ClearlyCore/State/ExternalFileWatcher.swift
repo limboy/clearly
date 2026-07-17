@@ -43,10 +43,6 @@ public final class ExternalFileWatcher: NSObject, NSFilePresenter, @unchecked Se
         NSFileCoordinator(filePresenter: self).coordinate(
             readingItemAt: url, options: [], error: &coordErr
         ) { resolved in
-            #if os(iOS)
-            let scoped = resolved.startAccessingSecurityScopedResource()
-            defer { if scoped { resolved.stopAccessingSecurityScopedResource() } }
-            #endif
             if let data = try? Data(contentsOf: resolved) {
                 diskText = String(decoding: data, as: UTF8.self)
             }

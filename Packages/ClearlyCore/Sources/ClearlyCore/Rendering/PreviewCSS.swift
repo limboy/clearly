@@ -397,14 +397,10 @@ public enum PreviewCSS {
             line-height: 1.75;
             max-width: \(bodyMaxWidth);
             margin: 0 auto;
-            padding-top: max(40px, env(safe-area-inset-top));
-            padding-right: max(64px, env(safe-area-inset-right));
-            padding-bottom: max(80px, env(safe-area-inset-bottom));
-            padding-left: max(64px, env(safe-area-inset-left));
+            padding: 40px 64px 80px;
             color: var(--c-text);
             background-color: var(--c-bg);
             -webkit-font-smoothing: antialiased;
-            -webkit-text-size-adjust: 100%;
         }
 
         h1, h2, h3, h4, h5, h6 {
@@ -1135,7 +1131,6 @@ public enum PreviewCSS {
             z-index: 10000;
             opacity: 0;
             transition: opacity 0.18s ease;
-            touch-action: none;
             -webkit-user-select: none;
             user-select: none;
             outline: none;
@@ -1157,7 +1152,7 @@ public enum PreviewCSS {
         }
         .mermaid-lightbox-controls {
             position: absolute;
-            bottom: max(20px, env(safe-area-inset-bottom, 0px));
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
@@ -1194,8 +1189,8 @@ public enum PreviewCSS {
         }
         .mermaid-lightbox-close {
             position: absolute;
-            top: max(16px, env(safe-area-inset-top, 0px));
-            right: max(16px, env(safe-area-inset-right, 0px));
+            top: 16px;
+            right: 16px;
             width: 36px;
             height: 36px;
             display: flex;

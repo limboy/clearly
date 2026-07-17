@@ -36,13 +36,7 @@ public enum FontPreferences {
     public static let familyKey = "contentFontFamily"
     public static let defaultFamily = ContentFontFamily.sfMono
 
-    public static var defaultSize: Double {
-        #if os(iOS)
-        return 17
-        #else
-        return 12
-        #endif
-    }
+    public static let defaultSize: Double = 12
 
     /// Consolidates older editor/preview preferences into one content font.
     /// Editor values win when the independent settings exist; the original
@@ -258,7 +252,7 @@ public enum Theme {
         public static let tabLabel = Font.system(size: 12, weight: .medium)
         /// Active tab label (same size + weight as inactive; pinned for call-site clarity).
         public static let tabLabelActive = Font.system(size: 12, weight: .medium)
-        /// Sidebar / file list row text (iPad Mac-parity; iPhone uses this at its native touch-target row height).
+        /// Sidebar / file list row text.
         public static let sidebarRow = Font.system(size: 13)
         /// Small-caps-style section headers ("OUTLINE", "BACKLINKS"). Apply `.tracking(sectionHeaderTracking)` at the call site.
         public static let sectionHeader = Font.system(size: 11, weight: .semibold)
@@ -280,8 +274,7 @@ public enum Theme {
 
     // MARK: - Spacing
 
-    /// Layout metrics shared across all platforms. Mac call sites can substitute platform-specific row
-    /// heights on iPhone (44pt touch target) while keeping Mac + iPad aligned on the 28pt source-list row.
+    /// Layout metrics shared by the app's chrome.
     public enum Spacing {
         public static let xs: CGFloat = 4
         public static let sm: CGFloat = 6
@@ -289,18 +282,16 @@ public enum Theme {
         public static let lg: CGFloat = 12
         public static let xl: CGFloat = 16
 
-        /// Mac + iPad source-list row height. iPhone sticks with the OS default (44pt) for touch.
+        /// Source-list row height.
         public static let sidebarRowHeight: CGFloat = 28
         /// Multi-document tab bar total height.
         public static let tabBarHeight: CGFloat = 38
-        /// Mac's bottom toolbar / iPad's mode-picker bar.
+        /// Bottom toolbar height.
         public static let bottomToolbarHeight: CGFloat = 40
 
         public static let cornerRadiusSmall: CGFloat = 6
         public static let cornerRadiusMedium: CGFloat = 8
         public static let cornerRadiusLarge: CGFloat = 12
-        /// Target radius for iOS sheet presentations to match macOS 14 window corners.
-        public static let sheetCornerRadius: CGFloat = 24
     }
 
     // MARK: - Motion Presets

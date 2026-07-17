@@ -10,8 +10,7 @@ public enum ImagePasteService {
         public let markdown: String
     }
 
-    /// Extensions Clearly treats as pastable/droppable image files. Used on
-    /// both platforms to filter incoming pasteboard / drop items.
+    /// Extensions Clearly treats as pastable/droppable image files.
     public static let imageFileExtensions: Set<String> = [
         "png", "jpg", "jpeg", "gif", "webp", "svg", "tiff", "tif", "bmp", "heic"
     ]

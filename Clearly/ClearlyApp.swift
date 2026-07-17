@@ -447,7 +447,6 @@ struct ClearlyApp: App {
                     let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
                     let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
                     let url = BugReportURL.build(
-                        platform: .macOS,
                         appVersion: "\(version) (\(build))",
                         osVersion: ProcessInfo.processInfo.operatingSystemVersionString
                     )

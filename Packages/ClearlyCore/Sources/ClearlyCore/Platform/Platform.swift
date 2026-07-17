@@ -1,7 +1,5 @@
 import Foundation
 import SwiftUI
-
-#if os(macOS)
 import AppKit
 
 public typealias PlatformFont = NSFont
@@ -11,17 +9,6 @@ public typealias PlatformPasteboard = NSPasteboard
 public typealias PlatformTextView = NSTextView
 public typealias PlatformTextStorage = NSTextStorage
 public typealias PlatformParagraphStyle = NSMutableParagraphStyle
-#elseif os(iOS)
-import UIKit
-
-public typealias PlatformFont = UIFont
-public typealias PlatformColor = UIColor
-public typealias PlatformImage = UIImage
-public typealias PlatformPasteboard = UIPasteboard
-public typealias PlatformTextView = UITextView
-public typealias PlatformTextStorage = NSTextStorage
-public typealias PlatformParagraphStyle = NSMutableParagraphStyle
-#endif
 
 public enum PlatformFontWeight {
     case regular
@@ -37,11 +24,7 @@ public enum PlatformFontDesign {
 public enum PlatformDevice {
     /// User-visible device name, used in conflict sibling filenames.
     public static func currentName() -> String {
-        #if os(iOS)
-        return UIDevice.current.name
-        #else
         return Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-        #endif
     }
 }
 
@@ -61,7 +44,6 @@ public extension PlatformFont {
         weight: PlatformFontWeight,
         design: PlatformFontDesign
     ) -> PlatformFont {
-        #if os(macOS)
         let platformWeight: NSFont.Weight = weight == .bold ? .bold : .regular
         if design == .monospaced {
             return NSFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
@@ -73,18 +55,6 @@ public extension PlatformFont {
             return base
         }
         return font
-        #else
-        let platformWeight: UIFont.Weight = weight == .bold ? .bold : .regular
-        if design == .monospaced {
-            return UIFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
-        }
-        let base = UIFont.systemFont(ofSize: size, weight: platformWeight)
-        guard design == .serif,
-              let descriptor = base.fontDescriptor.withDesign(.serif) else {
-            return base
-        }
-        return UIFont(descriptor: descriptor, size: size)
-        #endif
     }
 
     static func clearlyMonospacedSystemFont(ofSize size: CGFloat, weight: PlatformFontWeight) -> PlatformFont {
@@ -93,58 +63,28 @@ public extension PlatformFont {
 
     /// Returns a font with italic trait applied. Falls back to `self` if unavailable.
     func withItalicTrait() -> PlatformFont {
-        #if os(macOS)
         return NSFontManager.shared.convert(self, toHaveTrait: .italicFontMask)
-        #else
-        var traits = fontDescriptor.symbolicTraits
-        traits.insert(.traitItalic)
-        if let descriptor = fontDescriptor.withSymbolicTraits(traits) {
-            return UIFont(descriptor: descriptor, size: pointSize)
-        }
-        return self
-        #endif
     }
 
     /// Builds a bold + italic monospaced system font at the given size.
     static func clearlyMonospacedBoldItalic(size: CGFloat) -> PlatformFont {
-        #if os(macOS)
         let bold = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
         return NSFontManager.shared.convert(bold, toHaveTrait: .italicFontMask)
-        #else
-        let bold = UIFont.monospacedSystemFont(ofSize: size, weight: .bold)
-        var traits = bold.fontDescriptor.symbolicTraits
-        traits.insert(.traitItalic)
-        if let descriptor = bold.fontDescriptor.withSymbolicTraits(traits) {
-            return UIFont(descriptor: descriptor, size: size)
-        }
-        return bold
-        #endif
     }
 }
 
 public extension PlatformColor {
     static func clearlyColor(red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) -> PlatformColor {
-        #if os(macOS)
         return NSColor(red: red, green: green, blue: blue, alpha: alpha)
-        #else
-        return UIColor(red: red, green: green, blue: blue, alpha: alpha)
-        #endif
     }
 
     /// Loads a named color from the `ClearlyCore` asset catalog (`Bundle.module`).
     /// The asset must exist — unresolved names trap.
     static func clearlyAsset(named name: String) -> PlatformColor {
-        #if os(macOS)
         guard let color = NSColor(named: NSColor.Name(name), bundle: .module) else {
             fatalError("Missing color asset '\(name)' in ClearlyCore Colors.xcassets")
         }
         return color
-        #else
-        guard let color = UIColor(named: name, in: .module, compatibleWith: nil) else {
-            fatalError("Missing color asset '\(name)' in ClearlyCore Colors.xcassets")
-        }
-        return color
-        #endif
     }
 
     enum Appearance: Sendable {
@@ -156,7 +96,6 @@ public extension PlatformColor {
     /// color string: `#RRGGBB` when alpha rounds to 1, `rgba(r, g, b, a)` otherwise.
     func cssHexString(for appearance: Appearance) -> String {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
-        #if os(macOS)
         let target = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua) ?? NSAppearance(named: .aqua)!
         var resolved: NSColor?
         target.performAsCurrentDrawingAppearance {
@@ -168,10 +107,6 @@ public extension PlatformColor {
             b = resolved.blueComponent
             a = resolved.alphaComponent
         }
-        #else
-        let traits = UITraitCollection(userInterfaceStyle: appearance == .dark ? .dark : .light)
-        self.resolvedColor(with: traits).getRed(&r, green: &g, blue: &b, alpha: &a)
-        #endif
         let ri = Int((r * 255).rounded())
         let gi = Int((g * 255).rounded())
         let bi = Int((b * 255).rounded())
@@ -191,10 +126,6 @@ public extension PlatformColor {
 
 public extension Color {
     init(platformColor: PlatformColor) {
-        #if os(macOS)
         self.init(nsColor: platformColor)
-        #else
-        self.init(uiColor: platformColor)
-        #endif
     }
 }

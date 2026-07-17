@@ -4,7 +4,7 @@
 
 <h1 align="center">Clearly</h1>
 
-<p align="center">A native markdown editor for Mac and iPhone.</p>
+<p align="center">A native markdown editor for Mac.</p>
 
 <p align="center">
   <a href="https://apps.apple.com/app/clearly-markdown/id6760669470">Mac App Store</a> &middot;
@@ -17,7 +17,7 @@
   <img src="website/screenshots/screenshot-1.jpg" width="720" alt="Clearly — markdown editor with live preview" />
 </p>
 
-Open a `.md` file. Write with syntax highlighting. Toggle to preview. That's it. Native macOS and iOS, no Electron, no subscriptions, no telemetry.
+Open a `.md` file. Write with syntax highlighting. Toggle to preview. That's it. Native macOS, no Electron, no subscriptions, no telemetry.
 
 ## Features
 
@@ -43,7 +43,6 @@ Open a `.md` file. Write with syntax highlighting. Toggle to preview. That's it.
 
 - **QuickLook** — preview `.md` files in Finder with Space
 - **PDF export** — export or print, page breaks handled
-- **iOS** — same renderer, same syntax highlighter, opens any `.md` from the Files app
 
 ## Screenshots
 
@@ -59,7 +58,6 @@ Open a `.md` file. Write with syntax highlighting. Toggle to preview. That's it.
 ## Prerequisites
 
 - **macOS 15** (Sequoia) or later for the Mac app
-- **iOS 17** or later for the iPhone app
 - **Xcode 16+** with command-line tools (`xcode-select --install`)
 - **Homebrew** ([brew.sh](https://brew.sh))
 - **xcodegen** — `brew install xcodegen`
@@ -84,7 +82,6 @@ Then hit **⌘R** to build and run.
 
 ```bash
 xcodebuild -scheme Clearly -configuration Debug build
-xcodebuild -scheme Clearly-iOS -destination 'generic/platform=iOS Simulator' build
 ```
 
 ## Project Structure
@@ -92,25 +89,19 @@ xcodebuild -scheme Clearly-iOS -destination 'generic/platform=iOS Simulator' bui
 ```
 Clearly/
 ├── ClearlyApp.swift                # @main — DocumentGroup + menu commands (⌘1/⌘2)
-├── MarkdownDocument.swift          # FileDocument conformance for .md files (Mac + iOS)
+├── MarkdownDocument.swift          # FileDocument conformance for .md files
 ├── ContentView.swift               # Per-document scene root (Mac)
 ├── EditorView.swift                # NSViewRepresentable wrapping NSTextView
 ├── ClearlyTextView.swift           # Subclassed NSTextView with formatting actions
 ├── PreviewView.swift               # NSViewRepresentable wrapping WKWebView
 ├── ScratchpadManager.swift         # Menu-bar floating scratchpad windows
-├── SettingsView.swift              # General + About preferences
-└── iOS/
-    ├── ClearlyApp_iOS.swift        # @main — DocumentGroup, system Files browser
-    ├── DocumentDetailBody.swift    # Per-document scene root (iOS)
-    ├── EditorView_iOS.swift        # UIViewRepresentable wrapping UITextView
-    ├── ClearlyUITextView.swift     # TextKit 1 UITextView subclass
-    └── PreviewView_iOS.swift       # UIViewRepresentable wrapping WKWebView
+└── SettingsView.swift              # General + About preferences
 
 ClearlyQuickLook/
 ├── PreviewProvider.swift           # QLPreviewProvider for Finder previews
 └── Info.plist
 
-Packages/ClearlyCore/               # Local SwiftPM package, platform-agnostic
+Packages/ClearlyCore/               # Local macOS SwiftPM package shared by app + QuickLook
 └── Sources/ClearlyCore/
     ├── Rendering/                  # MarkdownRenderer, syntax highlighter, theme, mermaid/math/table support
     ├── State/                      # OpenDocument, OutlineState, FindState, JumpToLineState, StatusBarState
@@ -127,21 +118,20 @@ project.yml                         # xcodegen config (source of truth)
 
 ## Architecture
 
-**SwiftUI + AppKit/UIKit**, document-based on both platforms.
+**SwiftUI + AppKit**, with one window per document.
 
 ### Targets
 
-1. **Clearly** (Mac) — `DocumentGroup` with `MarkdownDocument`. AppKit `NSTextView` editor + `WKWebView` preview, both bridged via `NSViewRepresentable`. Includes a menu-bar `MenuBarExtra` for floating scratchpads.
-2. **Clearly-iOS** — `DocumentGroup`. UIKit `UITextView` editor + `WKWebView` preview, bridged via `UIViewRepresentable`. The system Files browser is the entry point.
-3. **ClearlyQuickLook** — Finder extension for previewing `.md` files with Space, sharing `MarkdownRenderer` from `ClearlyCore`.
+1. **Clearly** — `DocumentGroup` with `MarkdownDocument`. AppKit `NSTextView` editor + `WKWebView` preview, both bridged via `NSViewRepresentable`. Includes a menu-bar `MenuBarExtra` for floating scratchpads.
+2. **ClearlyQuickLook** — Finder extension for previewing `.md` files with Space, sharing `MarkdownRenderer` from `ClearlyCore`.
 
 ### Editor
 
-Wraps platform text views (`NSTextView` on Mac, `UITextView` on iOS) via `NSViewRepresentable` / `UIViewRepresentable`. This provides native undo/redo, the system find UI, and `NSTextStorageDelegate`-based syntax highlighting on every keystroke. iOS stays on TextKit 1 because TextKit 2 makes `textStorage` effectively dead.
+Wraps `NSTextView` via `NSViewRepresentable`. This provides native undo/redo, the system find UI, and `NSTextStorageDelegate`-based syntax highlighting on every keystroke.
 
 ### Preview
 
-`PreviewView` (Mac) and `PreviewView_iOS` both wrap `WKWebView` and render HTML via `MarkdownRenderer` (cmark-gfm). Post-processing pipeline: math → highlight marks → superscript/subscript → emoji → callouts → TOC → tables → code highlighting.
+`PreviewView` wraps `WKWebView` and renders HTML via `MarkdownRenderer` (cmark-gfm). Post-processing pipeline: math → highlight marks → superscript/subscript → emoji → callouts → TOC → tables → code highlighting.
 
 ### Dependencies
 
@@ -153,9 +143,9 @@ Wraps platform text views (`NSTextView` on Mac, `UITextView` on iOS) via `NSView
 
 ### Key Decisions
 
-- **AppKit/UIKit bridge** — platform text views over `TextEditor` for undo, find, and `NSTextStorageDelegate` syntax highlighting
+- **AppKit bridge** — `NSTextView` over `TextEditor` for undo, find, and `NSTextStorageDelegate` syntax highlighting
 - **Dynamic theming** — all colors through `Theme.swift` with `NSColor(name:)` for automatic light/dark
-- **Shared rendering** — `MarkdownRenderer` and `PreviewCSS` live in `ClearlyCore` and compile into Mac, iOS, and QuickLook
+- **Shared rendering** — `MarkdownRenderer` and `PreviewCSS` live in `ClearlyCore` and compile into the app and QuickLook
 - **Dual distribution** — Sparkle for direct, App Store without. All Sparkle code wrapped in `#if canImport(Sparkle)`
 - **No `.inspector()`** — outline panel uses `HStack` due to fullscreen safe area bugs
 
@@ -171,7 +161,7 @@ Edit `Packages/ClearlyCore/Sources/ClearlyCore/Rendering/PreviewCSS.swift`. Used
 
 ### Add a preview feature
 
-Follow the `MathSupport`/`MermaidSupport` pattern: create a `*Support.swift` enum in `ClearlyCore/Rendering/` with a static method that returns a `<script>` block. Integrate into `PreviewView.swift`, `PreviewView_iOS.swift`, `PreviewProvider.swift`, and `PDFExporter.swift`.
+Follow the `MathSupport`/`MermaidSupport` pattern: create a `*Support.swift` enum in `ClearlyCore/Rendering/` with a static method that returns a `<script>` block. Integrate into `PreviewView.swift`, `PreviewProvider.swift`, and `PDFExporter.swift`.
 
 ## Testing
 
@@ -179,7 +169,7 @@ Follow the `MathSupport`/`MermaidSupport` pattern: create a `*Support.swift` enu
 swift test --package-path Packages/ClearlyCore
 ```
 
-Runs the rendering, find/replace, outline, and stats unit suites (~76 tests). UI code in `Clearly/`, `Clearly/iOS/`, and `ClearlyQuickLook/` is verified by running the app, not unit-tested.
+Runs the rendering, find/replace, outline, and stats unit suites. UI code in `Clearly/` and `ClearlyQuickLook/` is verified by running the app, not unit-tested.
 
 ## License
 

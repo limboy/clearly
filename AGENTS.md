@@ -4,27 +4,21 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Commit message rule (hard requirement)
 
-Mac and iOS release independently (see "Versioning" below). The `/release` skill builds per-platform changelogs by filtering commits on a scope prefix, so every commit MUST start with one:
+The `/release` skill builds the changelog by filtering commits on a scope prefix, so every commit MUST start with one:
 
-- `[mac]` — Mac-only changes. Paths: `Clearly/` excluding `Clearly/iOS/`, `ClearlyQuickLook/`, `scripts/release.sh`, `scripts/release-appstore.sh`, `website/`.
-- `[ios]` — iOS-only changes. Paths: `Clearly/iOS/`, `scripts/release-ios.sh`.
-- `[shared]` — affects both platforms. Paths: `Packages/ClearlyCore/`, `Shared/Resources/`, cross-cutting `project.yml` edits. Appears in both changelogs.
-- `[chore]` — dev tooling, docs, CI, meta. Excluded from both user-facing changelogs. Paths: `AGENTS.md`, `.github/`, `docs/`, `.Codex/`, test harnesses, non-release scripts.
+- `[mac]` — user-visible product changes. Paths: `Clearly/`, `ClearlyQuickLook/`, `Packages/ClearlyCore/`, `Shared/Resources/`, `project.yml`, release scripts, `website/`.
+- `[chore]` — dev tooling, docs, CI, meta. Excluded from the user-facing changelog. Paths: `AGENTS.md`, `.github/`, `docs/`, `.Codex/`, test harnesses, non-release scripts.
 
-When a change touches paths from more than one scope, pick the most-specific user-visible scope. Use `[shared]` only when both platforms actually benefit. The release skill halts if it sees any un-scoped commit in the range.
+The release skill halts if it sees an un-scoped commit in the release range.
 
 ## Versioning
 
-Mac and iOS ship on independent cadences with independent version numbers and tags:
-
-- **Mac** (`Clearly` app, `ClearlyQuickLook`): tags `v<VERSION>` (e.g. `v2.3.0`). Changelog: `CHANGELOG.md`. QuickLook moves in lockstep with the Mac app.
-- **iOS** (`Clearly-iOS`): tags `ios-v<VERSION>` (e.g. `ios-v1.0.0`). Changelog: `CHANGELOG-iOS.md`.
-
-Version numbers on the two platforms are unrelated.
+The `Clearly` app and `ClearlyQuickLook` ship together. Releases use tags
+`v<VERSION>` (for example, `v2.3.0`) and `CHANGELOG.md`.
 
 ## What This Is
 
-Clearly is a native markdown editor — Mac (AppKit + SwiftUI) and iOS (UIKit + SwiftUI). Both apps are document-based: SwiftUI's `DocumentGroup` owns the scene, one window per `.md` file. Two view modes per document: a syntax-highlighted editor (NSTextView / TextKit-1 UITextView) and a read-only WKWebView preview. The Mac app also ships a QuickLook extension (`ClearlyQuickLook`) for previewing markdown files in Finder.
+Clearly is a native Mac markdown editor built with AppKit and SwiftUI. SwiftUI's `DocumentGroup` owns the scene, one window per `.md` file. Each document has two view modes: a syntax-highlighted `NSTextView` editor and a read-only `WKWebView` preview. The app also ships a QuickLook extension (`ClearlyQuickLook`) for previewing markdown files in Finder.
 
 There is intentionally **no** vault index, sync, AI, MCP server, sidebar, wiki-links, tags, backlinks, or command palette. If you're tempted to add infrastructure for any of those, push back — keeping this app boring is the point.
 
@@ -35,26 +29,24 @@ The Xcode project is generated from `project.yml` using [XcodeGen](https://githu
 ```bash
 xcodegen generate        # Regenerate .xcodeproj from project.yml
 xcodebuild -scheme Clearly -configuration Debug build   # Build Mac
-xcodebuild -scheme Clearly-iOS -destination 'generic/platform=iOS Simulator' build   # Build iOS
 ```
 
 Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen first).
 
 **Worktree-local DerivedData (Conductor / parallel workspaces).** When working in a Conductor worktree, always pass `-derivedDataPath ./.build/DerivedData` to `xcodebuild`. Without it, `xcodebuild` writes to the shared `~/Library/Developer/Xcode/DerivedData` and silently picks up products from a different worktree, and `open` then launches a stale or wrong-source app. The `/verify` skill enforces this; do the same for any direct `xcodebuild` invocation.
 
-- Deployment target: macOS 15.0; iOS 17.0
+- Deployment target: macOS 15.0
 - Swift 5.9 app / Swift 5 language mode for ClearlyCore (tools 6.0 to declare `.macOS(.v15)`).
 - Dependencies: `cmark-gfm` (GFM markdown → HTML), `Sparkle` (auto-updates, direct distribution only), `KeyboardShortcuts`, all via SwiftPM.
 
 ## Architecture
 
-**Three targets** in `project.yml`:
+**Two targets** in `project.yml`:
 
-1. **Clearly** (Mac app) — `DocumentGroup`-based SwiftUI app. AppKit `NSTextView` editor + `WKWebView` preview, both bridged via `NSViewRepresentable`. Includes a small `MenuBarExtra` for floating scratchpad windows.
-2. **Clearly-iOS** — `DocumentGroup`-based SwiftUI app. UIKit `UITextView` editor + `WKWebView` preview, bridged via `UIViewRepresentable`. The system's document browser is the entry point — no custom file list.
-3. **ClearlyQuickLook** (Mac app extension) — QLPreviewProvider that renders `.md` files in Finder via the same `MarkdownRenderer` used by the live preview.
+1. **Clearly** — `DocumentGroup`-based SwiftUI app. AppKit `NSTextView` editor + `WKWebView` preview, both bridged via `NSViewRepresentable`. Includes a small `MenuBarExtra` for floating scratchpad windows.
+2. **ClearlyQuickLook** — Mac app extension using `QLPreviewProvider` to render `.md` files in Finder via the same `MarkdownRenderer` used by the live preview.
 
-**`ClearlyCore`** — local Swift package at `Packages/ClearlyCore/`. Holds every platform-agnostic file. Platforms: `macOS 15` + `iOS 17`. Package.swift uses swift-tools-version 6.0 so it can declare `.v15`, but pins target language mode to `.v5` to avoid Swift 6 strict concurrency complaints on the existing shared state.
+**`ClearlyCore`** — local macOS Swift package at `Packages/ClearlyCore/`. Holds reusable code shared by the app and QuickLook extension. Package.swift uses swift-tools-version 6.0 so it can declare `.v15`, but pins target language mode to `.v5` to avoid Swift 6 strict concurrency complaints on the existing shared state.
 
 Folders inside `Sources/ClearlyCore/`:
 
@@ -67,32 +59,22 @@ Folders inside `Sources/ClearlyCore/`:
 
 **Rules for `ClearlyCore`:**
 - Any type or member used across the package boundary must be `public`. Consuming files need `import ClearlyCore`.
-- No `import AppKit` or `import UIKit` inside the package — use the `Platform.swift` typealiases. Platform-specific UI code stays in `Clearly/` (Mac) and `Clearly/iOS/`.
+- Keep AppKit type aliases and framework adapters centralized in `Platform.swift`; app UI code stays in `Clearly/`.
 - Pipeline contract for `MarkdownRenderer`: wraps `cmark_gfm_markdown_to_html()` for GFM rendering. Post-processing pipeline (in order): math (`$...$` → KaTeX spans), highlight marks (`==text==` → `<mark>`), superscript/subscript, emoji shortcodes, callouts/admonitions, TOC generation, table captions, code filename headers. Inline-syntax post-processors must use `protectCodeRegions()`/`restoreProtectedSegments()` to avoid transforming content inside `<pre>`/`<code>` tags.
 - Preview JS/CSS helpers (`MathSupport`, `MermaidSupport`, `TableSupport`, `SyntaxHighlightSupport`) each expose a static `scriptHTML(for:)` that returns an empty string when the feature isn't needed for the current content.
 
-**Shared web assets** (katex, mermaid, highlight, fonts, `demo.md`, `getting-started.md`) live at `Shared/Resources/` and are loaded via `Bundle.main.url(forResource:)`. `project.yml` bundles them into Clearly + Clearly-iOS + ClearlyQuickLook via explicit `buildPhase: resources` entries. Don't move them under the package's own `resources:` unless you also migrate every `Bundle.main` lookup to `Bundle.module`.
+**Shared web assets** (katex, mermaid, highlight, fonts, `demo.md`, `getting-started.md`) live at `Shared/Resources/` and are loaded via `Bundle.main.url(forResource:)`. `project.yml` bundles them into Clearly + ClearlyQuickLook via explicit `buildPhase: resources` entries. Don't move them under the package's own `resources:` unless you also migrate every `Bundle.main` lookup to `Bundle.module`.
 
 **App code** in `Clearly/`:
 - `ClearlyApp.swift` — App entry point (`@main`), `DocumentGroup`, AppKit menu injection (Spelling, Export PDF, Print, Preview Font), Sparkle bootstrap, MenuBarExtra for scratchpads. Defines focused-value keys for menu commands targeting the active document's per-window state.
 - `ContentView.swift` — Per-document scene root. Hosts the mode picker, find bar, jump-to-line bar, outline panel, status bar. Owns `OutlineState`/`FindState`/`JumpToLineState`/`StatusBarState` per document and exposes them to menu commands via `.focusedSceneValue`.
-- `MarkdownDocument.swift` — `FileDocument` for reading/writing `.md` files. Bound to `DocumentGroup` on both Mac and iOS.
+- `MarkdownDocument.swift` — `FileDocument` for reading/writing `.md` files. Bound to the app's `DocumentGroup`.
 - `EditorView.swift` / `ClearlyTextView.swift` — `NSViewRepresentable` wrapping the AppKit editor.
 - `PreviewView.swift` — `NSViewRepresentable` wrapping the read-only `WKWebView` preview.
 - `Scratchpad*.swift` — Independent menu-bar feature: floating scratchpad windows separate from `DocumentGroup`. `ScratchpadManager.saveAsDocument` reaches into `NSDocumentController.shared.openDocument(withContentsOf:)` to hand a saved scratchpad off as a regular document.
 - `AppShellSupport.swift` — Notification names paired between editor and preview, plus the `ActiveEditor` registry that menu formatting commands use to find the focused `ClearlyTextView`.
 
-**iOS code** in `Clearly/iOS/`:
-- `ClearlyApp_iOS.swift` — `DocumentGroup` entry; `MarkdownDocument` opens through the system document browser.
-- `DocumentDetailBody.swift` — Per-document scene root: editor / preview toggle, find overlay, outline sheet.
-- `EditorView_iOS.swift` / `ClearlyUITextView.swift` — UIKit editor.
-- `PreviewView_iOS.swift` — `WKWebView` preview.
-
 ### Important code-level invariants
-
-**`ClearlyUITextView` must stay on TextKit 1, not TextKit 2.** It calls `super.init(frame:textContainer:)` with a manually-constructed `NSTextStorage` → `NSLayoutManager` → `NSTextContainer` chain. Passing a non-nil `textContainer` is what forces TextKit 1 on iOS 16+; the default `UITextView(frame:)` defaults to TextKit 2 where `textView.textStorage` is effectively dead. Every path that reaches into `textStorage` — `MarkdownSyntaxHighlighter.highlightAll` / `highlightAround`, typing attributes, `NSTextStorageDelegate` — depends on TextKit 1.
-
-**iOS find-style highlights need an explicit background-color wipe before each paint.** TextKit 1 on iOS has no `removeTemporaryAttribute` API like macOS, so transient highlights live on `textStorage` via `addAttribute(.backgroundColor, ...)`. Re-running the syntax highlighter to "reset" backgrounds is NOT enough — it only *adds* attributes. Always do `storage.removeAttribute(.backgroundColor, range: fullRange)` first, *then* re-run the highlighter, *then* paint your new find ranges.
 
 **`NSApp.delegate` is NOT `ClearlyAppDelegate`** on Mac. SwiftUI's `@NSApplicationDelegateAdaptor` wraps the real delegate in a `SwiftUI.AppDelegate` proxy. `NSApp.delegate as? ClearlyAppDelegate` always returns nil. Use `ClearlyAppDelegate.shared` (a static weak reference set in `applicationDidFinishLaunching`) to reach the delegate from outside.
 
@@ -108,7 +90,7 @@ Folders inside `Sources/ClearlyCore/`:
 
 The `.md` QuickLook preview, Finder column-view preview, and "default app for `.md`" all share LaunchServices routing and break in non-obvious ways. A working configuration requires THREE Info.plist invariants together — any one missing silently degrades to raw-text preview or wrong default opener.
 
-**1. Use `UTExportedTypeDeclarations`, not `UTImportedTypeDeclarations`,** for `net.daringfireball.markdown` in `Clearly/Info.plist` and `Clearly/iOS/Info-iOS.plist`. Imported declarations are flagged `inactive imported untrusted` by LaunchServices when no app on the system *exports* the type authoritatively, and `quicklookd` falls through to the legacy `Text.qlgenerator` (raw markdown). `UTExportedTypeDeclarations` claims authoritative ownership.
+**1. Use `UTExportedTypeDeclarations`, not `UTImportedTypeDeclarations`,** for `net.daringfireball.markdown` in `Clearly/Info.plist`. Imported declarations are flagged `inactive imported untrusted` by LaunchServices when no app on the system *exports* the type authoritatively, and `quicklookd` falls through to the legacy `Text.qlgenerator` (raw markdown). `UTExportedTypeDeclarations` claims authoritative ownership.
 
 **2. `LSHandlerRank` must be `Owner`** in the same Info.plists. With `Default`, other `Owner`-rank claimants (Cursor, iA Writer, etc.) win the default-opener race even when their UTI claim is weaker.
 
@@ -141,17 +123,13 @@ The Mac app ships through two channels from the same codebase:
 - `SUEnableInstallerLauncherService` in Info.plist must stay `YES` — without it, Sparkle can't launch the installer in a sandboxed app.
 - Don't copy Sparkle's XPC services to `Contents/XPCServices/` — that's the old Sparkle 1.x approach. Sparkle 2.x bundles them inside the framework.
 
-## iOS distribution
-
-`scripts/release-ios.sh <version>` archives, exports, and uploads to App Store Connect via TestFlight. Bundle id (release): `com.sabotage.clearly` — shared with Mac for Universal Purchase. Debug bundle id: `com.sabotage.clearly.dev`. iOS entitlements file (`Clearly/iOS/Clearly-iOS.entitlements`) is intentionally empty — no iCloud, no temporary-exceptions.
-
 ## Testing
 
-`swift test --package-path Packages/ClearlyCore` runs the unit suite (rendering, find/replace, outline, status bar, image-paste filename math, etc.). All ~76 tests should be green at any commit.
+`swift test --package-path Packages/ClearlyCore` runs the unit suite (rendering, find/replace, outline, status bar, image-paste filename math, etc.). All tests should be green at any commit.
 
 **What to test:** anything pure-input/pure-output in `ClearlyCore`. Parsers, renderers, sync logic, find/replace.
 
-**What NOT to test:** SwiftUI views, `NSTextView`/`UITextView` wrappers, WKWebView preview rendering, AppKit menu wiring. Apple's UI frameworks don't unit-test cleanly; verify those by running the app via `/verify`.
+**What NOT to test:** SwiftUI views, `NSTextView` wrappers, WKWebView preview rendering, AppKit menu wiring. Apple's UI frameworks don't unit-test cleanly; verify those by running the app via `/verify`.
 
 Prefer Swift Testing (`@Test`, `#expect`) for new tests. Existing XCTest suites stay — don't rewrite working tests. Per-test temp dir pattern: `FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)` + `defer { try? FileManager.default.removeItem(at:) }`.
 
@@ -165,7 +143,7 @@ Prefer Swift Testing (`@Test`, `#expect`) for new tests. Existing XCTest suites 
 
 ### Adding preview features
 
-Follow the `MathSupport`/`MermaidSupport`/`TableSupport`/`SyntaxHighlightSupport` pattern: create a `*Support.swift` enum in `ClearlyCore/Rendering/` with a static method that returns a `<script>` block (or empty string if the feature isn't needed for the current content). Integrate it into `PreviewView.swift`, `PreviewView_iOS.swift`, `ClearlyQuickLook/PreviewProvider.swift`, and `PDFExporter.swift` HTML templates.
+Follow the `MathSupport`/`MermaidSupport`/`TableSupport`/`SyntaxHighlightSupport` pattern: create a `*Support.swift` enum in `ClearlyCore/Rendering/` with a static method that returns a `<script>` block (or empty string if the feature isn't needed for the current content). Integrate it into `PreviewView.swift`, `ClearlyQuickLook/PreviewProvider.swift`, and `PDFExporter.swift` HTML templates.
 
 **Preview-to-editor communication.** Interactive preview features that modify source text (e.g., task checkbox toggle) use `WKScriptMessageHandler` callbacks. Register the handler, add a callback closure on `PreviewView`, and wire it in `ContentView`. When the preview modifies source text, set `coordinator.skipNextReload = true` before updating the binding — this prevents a full `loadHTMLString` flash since the DOM is already updated.
 

@@ -1,7 +1,6 @@
 #!/bin/bash
-# Generates website/changelog.html from CHANGELOG.md + CHANGELOG-iOS.md.
-# Sourced by scripts/release.sh and scripts/release-ios.sh; also runnable
-# standalone for local verification:
+# Generates website/changelog.html from CHANGELOG.md.
+# Sourced by scripts/release.sh; also runnable standalone for local verification:
 #
 #   bash scripts/lib/changelog-html.sh
 
@@ -57,8 +56,7 @@ generate_changelog_html() {
   local tmp
   tmp="$(mktemp)"
 
-  _changelog_emit_versions "$root/CHANGELOG.md"     "Mac" >  "$tmp"
-  _changelog_emit_versions "$root/CHANGELOG-iOS.md" "iOS" >> "$tmp"
+  _changelog_emit_versions "$root/CHANGELOG.md" "Mac" > "$tmp"
 
   # ISO dates sort lexicographically; -r = newest first.
   sort -r -o "$tmp" "$tmp"
@@ -67,14 +65,8 @@ generate_changelog_html() {
   while IFS=$'\t' read -r date platform version bullets; do
     [ -n "$version" ] || continue
 
-    local badge_classes anchor
-    if [ "$platform" = "Mac" ]; then
-      badge_classes="bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20"
-      anchor="mac-v$version"
-    else
-      badge_classes="bg-purple-500/10 text-purple-300 ring-1 ring-inset ring-purple-500/20"
-      anchor="ios-v$version"
-    fi
+    local badge_classes="bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20"
+    local anchor="mac-v$version"
 
     local items=""
     local item
@@ -113,9 +105,9 @@ $items                    </ul>
     <link rel="manifest" href="/site.webmanifest">
 
     <title>Changelog — Clearly</title>
-    <meta name="description" content="Release notes for Clearly — a native markdown editor and knowledge base for Mac and iPad.">
+    <meta name="description" content="Release notes for Clearly — a native markdown editor and knowledge base for Mac.">
     <meta property="og:title" content="Changelog — Clearly">
-    <meta property="og:description" content="Release notes for Clearly. Mac and iPad, newest first.">
+    <meta property="og:description" content="Release notes for Clearly on Mac, newest first.">
     <meta property="og:image" content="https://clearly.md/icon.png">
     <meta property="og:url" content="https://clearly.md/changelog">
     <meta name="twitter:card" content="summary_large_image">
@@ -164,7 +156,7 @@ $items                    </ul>
                     Changelog
                 </h1>
                 <p class="mt-3 text-zinc-400 text-pretty max-w-[60ch]">
-                    Everything that's shipped in Clearly — Mac and iPad, newest first.
+                    Everything that's shipped in Clearly for Mac, newest first.
                 </p>
             </div>
         </section>

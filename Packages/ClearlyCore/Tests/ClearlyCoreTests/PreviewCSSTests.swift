@@ -116,21 +116,6 @@ final class PreviewCSSTests: XCTestCase {
         XCTAssertTrue(sheet.contains(".wiki-link, .wiki-link-broken { border-bottom: none !important; }"))
     }
 
-    // MARK: - iOS mobile surface additions
-
-    func testBodyUsesWebkitTextSizeAdjust() {
-        let sheet = PreviewCSS.css()
-        XCTAssertTrue(sheet.contains("-webkit-text-size-adjust: 100%"))
-    }
-
-    func testBodyUsesEnvSafeAreaInsetPadding() {
-        let sheet = PreviewCSS.css()
-        XCTAssertTrue(sheet.contains("env(safe-area-inset-top)"))
-        XCTAssertTrue(sheet.contains("env(safe-area-inset-right)"))
-        XCTAssertTrue(sheet.contains("env(safe-area-inset-bottom)"))
-        XCTAssertTrue(sheet.contains("env(safe-area-inset-left)"))
-    }
-
     // MARK: - cssHexString helper
 
     func testCssHexStringProducesHexForOpaqueColor() {
