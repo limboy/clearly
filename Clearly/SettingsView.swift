@@ -17,7 +17,6 @@ struct SettingsView: View {
     @AppStorage("contentWidth") private var contentWidth = "off"
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @AppStorage("keepRunningMenubarOnly") private var keepRunningMenubarOnly = true
-    @AppStorage("launchBehavior") private var launchBehavior = "filePicker"
     @AppStorage("defaultViewMode") private var defaultViewMode = "edit"
     @AppStorage("scratchpadRetentionMode") private var scratchpadRetentionMode = "all"
     @AppStorage("scratchpadRetentionDays") private var scratchpadRetentionDays = 90
@@ -60,14 +59,6 @@ struct SettingsView: View {
                 Text("System").tag("system")
                 Text("Light").tag("light")
                 Text("Dark").tag("dark")
-            }
-
-            Picker("On Launch", selection: $launchBehavior) {
-                Text("Create new document").tag("newDocument")
-                Text("Open last file").tag("lastFile")
-                Text("Open last workspace").tag("lastWorkspace")
-                Text("Show file picker").tag("filePicker")
-                Text("Do nothing").tag("nothing")
             }
 
             Picker("Default View Mode", selection: $defaultViewMode) {

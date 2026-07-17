@@ -51,24 +51,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         Self.shared = self
         injectFontSubmenu()
 
-        DiagnosticLog.log("didFinishLaunching: launchBehavior=\(launchBehavior), keepRunning=\(keepRunningMenubarOnly), docs=\(NSDocumentController.shared.documents.count)")
-
-        // SwiftUI's `DocumentGroup` launcher will appear at launch for any
-        // `launchBehavior` that doesn't itself open a window — "filePicker"
-        // (we return false from `applicationOpenUntitledFile`) and "nothing"
-        // (we return true but no window opens). When the launcher dismisses,
-        // both `applicationShouldTerminate` and
-        // `applicationShouldTerminateAfterLastWindowClosed` fire and would
-        // terminate the app before the user-picked document finishes
-        // loading. Set the panel flag now so the defer logic in those
-        // methods can hold quit off until the doc arrives.
-        let launchBehaviorWillOpenWindow = launchBehavior == "newDocument"
-            || launchBehavior == "lastFile"
-            || launchBehavior == "lastWorkspace"
-        if !launchBehaviorWillOpenWindow && NSDocumentController.shared.documents.isEmpty {
-            isDocumentPanelPresented = true
-            DiagnosticLog.log("didFinishLaunching: set isDocumentPanelPresented=true")
-        }
+        DiagnosticLog.log("didFinishLaunching: keepRunning=\(keepRunningMenubarOnly), docs=\(NSDocumentController.shared.documents.count)")
 
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
@@ -85,8 +68,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         })
-        observers.append(nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] notification in
             Task { @MainActor [weak self] in
+                if let window = notification.object as? NSWindow {
+                    WorkspaceManager.windowDidBecomeMain(window)
+                }
                 self?.updateActivationPolicy()
             }
         })
@@ -96,59 +82,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // SwiftUI may rebuild the main menu after launch. Reinstall this
         // idempotent AppKit addition before AppKit updates menu state.
         injectSpellingMenu()
-    }
-
-    /// Honor the user's `launchBehavior` preference. Returning `true` tells
-    /// `NSDocumentController` we handled launch ourselves; returning `false`
-    /// hands off to its native "Recent Files / New Document" panel — which
-    /// has its own `New Document` button that dismisses cleanly.
-    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        switch launchBehavior {
-        case "newDocument":
-            do { try NSDocumentController.shared.openUntitledDocumentAndDisplay(true) }
-            catch { return false }
-            return true
-        case "lastFile":
-            if let url = NSDocumentController.shared.recentDocumentURLs.first,
-               FileManager.default.fileExists(atPath: url.path) {
-                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
-                return true
-            }
-            do { try NSDocumentController.shared.openUntitledDocumentAndDisplay(true) }
-            catch { return false }
-            return true
-        case "lastWorkspace":
-            // The workspace Window scene is presented by its
-            // `defaultLaunchBehavior`; suppress the document launcher.
-            return true
-        case "nothing":
-            // Claim we handled it so the system doesn't show its own panel.
-            return true
-        default:
-            // "filePicker" — let `NSDocumentController` show the native
-            // Recent Files / New Document panel.
-            isDocumentPanelPresented = true
-            return false
-        }
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !hasDocumentWindows() {
-            if launchBehavior == "filePicker" {
-                NSDocumentController.shared.openDocument(nil)
-            } else {
-                _ = applicationOpenUntitledFile(sender)
-            }
-        }
-        return true
-    }
-
-    private var launchBehavior: String {
-        UserDefaults.standard.string(forKey: "launchBehavior") ?? "filePicker"
+        consolidateOpenCommands()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         DiagnosticLog.log("appShouldTerminateAfterLast: keepRunning=\(keepRunningMenubarOnly), panel=\(isDocumentPanelPresented), docs=\(NSDocumentController.shared.documents.count)")
+        if isSettingsWindowOpeningOrVisible {
+            DiagnosticLog.log("appShouldTerminateAfterLast: Settings active, keeping app alive")
+            return false
+        }
         if keepRunningMenubarOnly {
             NSApp.setActivationPolicy(.accessory)
             return false
@@ -171,8 +113,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             self.isDocumentPanelPresented = false
             let docCount = NSDocumentController.shared.documents.count
             DiagnosticLog.log("scheduleDeferredQuit: fired, docs=\(docCount)")
-            if docCount == 0 {
+            if docCount == 0 && !self.isSettingsWindowOpeningOrVisible {
                 NSApp.terminate(nil)
+            } else if self.isSettingsWindowOpeningOrVisible {
+                DiagnosticLog.log("scheduleDeferredQuit: canceled, Settings active")
             }
         }
         return true
@@ -183,7 +127,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // Workspace windows are not owned by NSDocumentController, so flush
         // their active buffer explicitly before either quitting or dropping
         // back to menu-bar-only mode.
-        guard WorkspaceManager.shared.prepareForWindowClose() else {
+        guard WorkspaceManager.prepareAllForTermination() else {
             return .terminateCancel
         }
         if allowFullQuit { return .terminateNow }
@@ -195,9 +139,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         }
 
-        guard WorkspaceManager.shared.closeWindowForMenuBar() else {
-            return .terminateCancel
-        }
+        WorkspaceManager.closeAllWindowsForMenuBar()
 
         // Drop to menubar instead of terminating. `closeAllDocuments` walks
         // every NSDocument (including SwiftUI DocumentGroup ones), prompting
@@ -272,7 +214,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // doesn't have an associated `NSDocument`, so we use the controller's
         // documents collection (which the launcher is absent from) as the
         // authoritative "is a real doc up" signal.
-        if !NSDocumentController.shared.documents.isEmpty || WorkspaceManager.shared.hasVisibleWindow {
+        if !NSDocumentController.shared.documents.isEmpty || WorkspaceManager.hasAnyVisibleWindow {
             isDocumentPanelPresented = false
         }
         guard keepRunningMenubarOnly else {
@@ -315,6 +257,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Settings window tracking (menu-bar Settings… coordination)
+
+    private var isSettingsWindowOpeningOrVisible: Bool {
+        isOpeningSettingsFromMenuBar || trackedSettingsWindow?.isVisible == true
+    }
 
     func prepareForMenuBarSettingsActivation() {
         isOpeningSettingsFromMenuBar = true
@@ -385,6 +331,31 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(fontMenuItem)
     }
 
+    /// `DocumentGroup` contributes its own Open command. Clearly inserts a
+    /// unified Open command that accepts either a document or a workspace
+    /// folder. Transfer the system command's icon to the unified command,
+    /// then remove the duplicate.
+    private func consolidateOpenCommands() {
+        guard let fileMenu = NSApp.mainMenu?.item(withTitle: "File")?.submenu else { return }
+        let openItems = fileMenu.items.filter { item in
+            item.submenu == nil
+                && item.title.replacingOccurrences(of: "…", with: "...") == "Open..."
+        }
+        guard openItems.count > 1 else { return }
+
+        let unifiedItem = openItems.first(where: { item in
+            let modifiers = item.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask)
+            return item.keyEquivalent.lowercased() == "o" && modifiers == .command
+        }) ?? openItems[0]
+
+        for duplicate in openItems where duplicate !== unifiedItem {
+            if unifiedItem.image == nil, let image = duplicate.image {
+                unifiedItem.image = image
+            }
+            fileMenu.removeItem(duplicate)
+        }
+    }
+
     @objc private func setFontAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
         UserDefaults.standard.set(value, forKey: FontPreferences.familyKey)
@@ -415,7 +386,6 @@ private final class ClearlyUpdaterDelegate: NSObject, SPUUpdaterDelegate {
 struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
-    @AppStorage("launchBehavior") private var launchBehavior = "filePicker"
     @State private var scratchpadManager = ScratchpadManager.shared
     @State private var scratchpadStore = ScratchpadStore.shared
 
@@ -453,14 +423,15 @@ struct ClearlyApp: App {
                 .preferredColorScheme(resolvedColorScheme)
         }
         .defaultSize(width: 800, height: 900)
-        .defaultLaunchBehavior(launchBehavior == "lastWorkspace" ? .suppressed : .automatic)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
         .commands {
             CommandGroup(after: .appInfo) {
                 #if canImport(Sparkle)
                 CheckForUpdatesView(updater: updaterController.updater)
                 #endif
             }
-            OpenWorkspaceCommands()
+            WorkspaceCommands()
             EditorCommands()
             CommandGroup(replacing: .help) {
                 Button("Sample Document") {
@@ -483,12 +454,19 @@ struct ClearlyApp: App {
             }
         }
 
-        Window("Workspace", id: WorkspaceScene.id) {
-            WorkspaceView()
+        WindowGroup(
+            "Workspace",
+            id: WorkspaceScene.id,
+            for: WorkspaceScene.Value.self
+        ) { value in
+            WorkspaceView(folderURL: value.wrappedValue.folderURL)
                 .preferredColorScheme(resolvedColorScheme)
+        } defaultValue: {
+            WorkspaceScene.Value(folderURL: nil)
         }
         .defaultSize(width: 1120, height: 780)
-        .defaultLaunchBehavior(launchBehavior == "lastWorkspace" ? .presented : .suppressed)
+        .defaultLaunchBehavior(.presented)
+        .restorationBehavior(.disabled)
 
         Settings {
             #if canImport(Sparkle)

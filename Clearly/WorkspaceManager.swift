@@ -12,7 +12,51 @@ import ClearlyCore
 @MainActor
 @Observable
 final class WorkspaceManager {
-    static let shared = WorkspaceManager()
+    private final class WeakReference {
+        weak var manager: WorkspaceManager?
+
+        init(_ manager: WorkspaceManager) {
+            self.manager = manager
+        }
+    }
+
+    private static var managerReferences: [WeakReference] = []
+    private static weak var activeManager: WorkspaceManager?
+
+    static var active: WorkspaceManager? {
+        if let activeManager, activeManager.hasVisibleWindow {
+            return activeManager
+        }
+        return liveManagers.last(where: \.hasVisibleWindow) ?? liveManagers.last
+    }
+
+    static var hasAnyVisibleWindow: Bool {
+        liveManagers.contains(where: \.hasVisibleWindow)
+    }
+
+    static func windowDidBecomeMain(_ window: NSWindow) {
+        if let manager = liveManagers.first(where: { $0.workspaceWindow === window }) {
+            activeManager = manager
+        }
+    }
+
+    static func prepareAllForTermination() -> Bool {
+        for manager in liveManagers {
+            guard manager.prepareForWindowClose() else { return false }
+        }
+        return true
+    }
+
+    static func closeAllWindowsForMenuBar() {
+        for manager in liveManagers {
+            manager.workspaceWindow?.performClose(nil)
+        }
+    }
+
+    private static var liveManagers: [WorkspaceManager] {
+        managerReferences.removeAll(where: { $0.manager == nil })
+        return managerReferences.compactMap(\.manager)
+    }
 
     private(set) var rootURL: URL?
     private(set) var tree: [WorkspaceTreeNode] = []
@@ -55,11 +99,19 @@ final class WorkspaceManager {
     private static let expandedPathsKey = "workspaceExpandedFolderPaths"
     private static let autoSaveDelay: TimeInterval = 0.45
 
-    private init() {
+    init(folderURL: URL? = nil) {
         expandedFolderPaths = Set(
             UserDefaults.standard.stringArray(forKey: Self.expandedPathsKey) ?? []
         )
-        restoreWorkspace()
+        if let folderURL {
+            _ = attachWorkspace(at: folderURL)
+        } else {
+            restoreWorkspace()
+        }
+        Self.managerReferences.append(WeakReference(self))
+        if Self.activeManager == nil {
+            Self.activeManager = self
+        }
     }
 
     deinit {
@@ -433,21 +485,16 @@ final class WorkspaceManager {
 
     func registerWindow(_ window: NSWindow) {
         workspaceWindow = window
+        Self.activeManager = self
     }
 
     func unregisterWindow(_ window: NSWindow) {
         if workspaceWindow === window {
             workspaceWindow = nil
+            if Self.activeManager === self {
+                Self.activeManager = Self.liveManagers.last(where: \.hasVisibleWindow)
+            }
         }
-    }
-
-    /// Used by the app's menu-bar-only quit flow. The workspace is autosaved
-    /// first, then its non-DocumentGroup window is closed explicitly.
-    @discardableResult
-    func closeWindowForMenuBar() -> Bool {
-        guard prepareForWindowClose() else { return false }
-        workspaceWindow?.performClose(nil)
-        return true
     }
 
     // MARK: - FSEvents
