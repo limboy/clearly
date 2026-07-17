@@ -17,9 +17,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var isOpeningSettingsFromMenuBar = false
     private var observers: [Any] = []
 
-    /// Temporarily set by the menubar "Quit Clearly" item so
-    /// `applicationShouldTerminate` knows to let the process actually exit.
-    /// Any other terminate path (⌘Q, File ▸ Quit) is treated as "drop to
+    /// Set when a termination request must actually exit, either from the
+    /// menubar "Quit Clearly" item or Sparkle's install-and-relaunch flow.
+    /// Other terminate paths (⌘Q, File ▸ Quit) are treated as "drop to
     /// menubar" when the menubar-only toggle is on.
     private var allowFullQuit = false
 
@@ -250,6 +250,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    fileprivate func prepareForUpdaterRelaunch() {
+        DiagnosticLog.log("updaterWillRelaunch: allowing full quit")
+        allowFullQuit = true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
@@ -395,6 +400,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+#if canImport(Sparkle)
+@MainActor
+private final class ClearlyUpdaterDelegate: NSObject, SPUUpdaterDelegate {
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        ClearlyAppDelegate.shared?.prepareForUpdaterRelaunch()
+    }
+}
+#endif
+
 // MARK: - App Entry
 
 @main
@@ -406,6 +420,7 @@ struct ClearlyApp: App {
     @State private var scratchpadStore = ScratchpadStore.shared
 
     #if canImport(Sparkle)
+    private let updaterDelegate: ClearlyUpdaterDelegate
     private let updaterController: SPUStandardUpdaterController
     #endif
 
@@ -414,10 +429,12 @@ struct ClearlyApp: App {
         DiagnosticLog.trimIfNeeded()
         DiagnosticLog.log("App launched")
         #if canImport(Sparkle)
+        let updaterDelegate = ClearlyUpdaterDelegate()
+        self.updaterDelegate = updaterDelegate
         #if DEBUG
-        updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: updaterDelegate, userDriverDelegate: nil)
         #else
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: updaterDelegate, userDriverDelegate: nil)
         #endif
         #endif
     }

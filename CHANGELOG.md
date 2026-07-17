@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Installing an update now quits and relaunches Clearly correctly when menu-bar mode is enabled
 
 ## [3.3.2] - 2026-07-17
 - Find controls are clearer and easier to use, with improved actions and menu icons
