@@ -6,11 +6,14 @@ import ClearlyCore
 /// bar, outline panel, and the floating bottom toolbar (mode picker / counts /
 /// copy / outline). One instance per `DocumentGroup` window.
 struct ContentView: View {
-    @Binding var document: MarkdownDocument
+    @Binding var text: String
     let fileURL: URL?
+    let embedsOutline: Bool
+    let minimumContentWidth: CGFloat
+    let onViewModeChange: ((ViewMode) -> Void)?
 
     @State private var viewMode: ViewMode
-    @StateObject private var outlineState = OutlineState()
+    @StateObject private var outlineState: OutlineState
     @StateObject private var findState = FindState()
     @StateObject private var jumpToLineState = JumpToLineState()
     @StateObject private var statusBarState = StatusBarState()
@@ -27,14 +30,25 @@ struct ContentView: View {
     /// document URL change so two windows on different files don't collide.
     @State private var positionSyncID: String = UUID().uuidString
 
-    init(document: Binding<MarkdownDocument>, fileURL: URL?) {
-        self._document = document
+    init(
+        text: Binding<String>,
+        fileURL: URL?,
+        outlineState: OutlineState? = nil,
+        embedsOutline: Bool = true,
+        minimumContentWidth: CGFloat = 600,
+        onViewModeChange: ((ViewMode) -> Void)? = nil
+    ) {
+        self._text = text
         self.fileURL = fileURL
+        self._outlineState = StateObject(wrappedValue: outlineState ?? OutlineState())
+        self.embedsOutline = embedsOutline
+        self.minimumContentWidth = minimumContentWidth
+        self.onViewModeChange = onViewModeChange
         // Never land a blank document in Preview — there'd be nothing to see
         // and no obvious way to edit.
         let raw = UserDefaults.standard.string(forKey: "defaultViewMode") ?? "edit"
         let preferred = ViewMode(rawValue: raw) ?? .edit
-        let isBlank = document.wrappedValue.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isBlank = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self._viewMode = State(initialValue: (preferred == .preview && isBlank) ? .edit : preferred)
     }
 
@@ -93,7 +107,7 @@ struct ContentView: View {
                                     statusBarState: statusBarState,
                                     outlineState: outlineState,
                                     fileURL: fileURL,
-                                    documentText: { document.text }
+                                    documentText: { text }
                                 )
                                 .padding(.horizontal, 12)
                                 .padding(.bottom, 6)
@@ -102,23 +116,30 @@ struct ContentView: View {
                         }
                     }
 
-                if outlineState.isVisible {
-                    OutlineView(outlineState: outlineState, isEditorVisible: viewMode == .edit)
+                if embedsOutline && outlineState.isVisible {
+                    OutlineView(
+                        outlineState: outlineState,
+                        isEditorVisible: viewMode == .edit
+                    )
                         .frame(width: 240)
                 }
             }
         }
-        .frame(minWidth: 600, minHeight: 360)
+        .frame(minWidth: minimumContentWidth, minHeight: 360)
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
         .focusedSceneValue(\.viewMode, $viewMode)
         .focusedSceneValue(\.exportPDFAction) { exportPDF() }
         .focusedSceneValue(\.printDocumentAction) { printDocument() }
         .onAppear {
-            outlineState.parseHeadings(from: document.text)
-            statusBarState.updateText(document.text)
+            outlineState.parseHeadings(from: text)
+            statusBarState.updateText(text)
+            onViewModeChange?(viewMode)
         }
-        .onChange(of: document.text) { _, newText in
+        .onChange(of: viewMode) { _, newMode in
+            onViewModeChange?(newMode)
+        }
+        .onChange(of: text) { _, newText in
             outlineState.parseHeadings(from: newText)
             statusBarState.updateText(newText)
         }
@@ -127,7 +148,7 @@ struct ContentView: View {
             // file's scroll position doesn't inherit the old fraction.
             positionSyncID = UUID().uuidString
         }
-        .watchExternalChanges(fileURL: fileURL, text: $document.text) { url in
+        .watchExternalChanges(fileURL: fileURL, text: $text) { url in
             // Sync SwiftUI's underlying NSDocument's fileModificationDate to
             // the new on-disk mtime — without this, the next autosave detects
             // a conflict and shows "could not be autosaved" dialog. We
@@ -147,7 +168,7 @@ struct ContentView: View {
     private var mainPane: some View {
         ZStack {
             EditorView(
-                text: $document.text,
+                text: $text,
                 fontSize: CGFloat(fontSize),
                 fileURL: fileURL,
                 mode: viewMode,
@@ -164,7 +185,7 @@ struct ContentView: View {
             .allowsHitTesting(viewMode == .edit)
 
             PreviewView(
-                markdown: document.text,
+                markdown: text,
                 fontSize: CGFloat(fontSize) + 4,
                 fontFamily: previewFontFamily,
                 mode: viewMode,
@@ -185,7 +206,7 @@ struct ContentView: View {
     /// Toggle the `[ ]` / `[x]` on the source line that produced this rendered
     /// task. Called from the preview-side click handler.
     private func toggleTask(line: Int, checked: Bool) {
-        let lines = document.text.components(separatedBy: "\n")
+        let lines = text.components(separatedBy: "\n")
         guard line > 0, line <= lines.count else { return }
         let original = lines[line - 1]
         let updated: String
@@ -197,12 +218,12 @@ struct ContentView: View {
         guard updated != original else { return }
         var newLines = lines
         newLines[line - 1] = updated
-        document.text = newLines.joined(separator: "\n")
+        text = newLines.joined(separator: "\n")
     }
 
     private func exportPDF() {
         PDFExporter().exportPDF(
-            markdown: document.text,
+            markdown: text,
             fontSize: CGFloat(fontSize),
             fontFamily: previewFontFamily,
             fileURL: fileURL
@@ -211,11 +232,10 @@ struct ContentView: View {
 
     private func printDocument() {
         PDFExporter().printHTML(
-            markdown: document.text,
+            markdown: text,
             fontSize: CGFloat(fontSize),
             fontFamily: previewFontFamily,
             fileURL: fileURL
         )
     }
 }
-

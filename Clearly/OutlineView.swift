@@ -8,18 +8,23 @@ struct OutlineView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("OUTLINE")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .tracking(1.5)
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 6)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("OUTLINE")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .tracking(1.5)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
 
-            Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
-                .frame(height: 1)
-                .padding(.horizontal, 12)
+                Rectangle()
+                    .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+                    .frame(height: 1)
+                    .padding(.horizontal, 12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.outlinePanelBackgroundSwiftUI)
+            .zIndex(1)
 
             if outlineState.headings.isEmpty {
                 Spacer()
@@ -47,6 +52,7 @@ struct OutlineView: View {
                     }
                     .padding(.bottom, 8)
                 }
+                .clipped()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -13,9 +13,9 @@ extension Notification.Name {
 
 /// Holds a weak reference to the currently focused `ClearlyTextView`.
 /// Menu commands (formatting, etc.) target whichever editor most
-/// recently became key. Without `WorkspaceManager` to track multi-doc
-/// activation, this is the simplest stand-in that works under
-/// `DocumentGroup`'s one-window-per-document model.
+/// recently became key. This works for both DocumentGroup windows and the
+/// workspace's single active editor without coupling commands to either
+/// window model.
 @MainActor
 final class ActiveEditor {
     static let shared = ActiveEditor()

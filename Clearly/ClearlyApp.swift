@@ -169,6 +169,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         DiagnosticLog.log("appShouldTerminate: allowFullQuit=\(allowFullQuit), keepRunning=\(keepRunningMenubarOnly), panel=\(isDocumentPanelPresented), docs=\(NSDocumentController.shared.documents.count)")
+        // Workspace windows are not owned by NSDocumentController, so flush
+        // their active buffer explicitly before either quitting or dropping
+        // back to menu-bar-only mode.
+        guard WorkspaceManager.shared.prepareForWindowClose() else {
+            return .terminateCancel
+        }
         if allowFullQuit { return .terminateNow }
         guard keepRunningMenubarOnly else {
             // menubar-off: a launcher / open panel may have dismissed and
@@ -176,6 +182,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             // Defer the actual quit until either it shows up or 3s lapses.
             if scheduleDeferredQuitIfPanelInFlight() { return .terminateCancel }
             return .terminateNow
+        }
+
+        guard WorkspaceManager.shared.closeWindowForMenuBar() else {
+            return .terminateCancel
         }
 
         // Drop to menubar instead of terminating. `closeAllDocuments` walks
@@ -246,7 +256,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // doesn't have an associated `NSDocument`, so we use the controller's
         // documents collection (which the launcher is absent from) as the
         // authoritative "is a real doc up" signal.
-        if !NSDocumentController.shared.documents.isEmpty {
+        if !NSDocumentController.shared.documents.isEmpty || WorkspaceManager.shared.hasVisibleWindow {
             isDocumentPanelPresented = false
         }
         guard keepRunningMenubarOnly else {
@@ -408,7 +418,7 @@ struct ClearlyApp: App {
 
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
-            ContentView(document: file.$document, fileURL: file.fileURL)
+            ContentView(text: file.$document.text, fileURL: file.fileURL)
                 .preferredColorScheme(resolvedColorScheme)
         }
         .defaultSize(width: 800, height: 900)
@@ -418,51 +428,8 @@ struct ClearlyApp: App {
                 CheckForUpdatesView(updater: updaterController.updater)
                 #endif
             }
-            CommandGroup(replacing: .printItem) {
-                ExportPrintCommands()
-            }
-            CommandGroup(after: .textEditing) {
-                FindCommand()
-            }
-            CommandGroup(after: .toolbar) {
-                ViewModeCommands()
-                OutlineToggleCommand()
-                LineNumbersToggleCommand()
-                BottomToolbarVisibilityCommand()
-            }
-            CommandGroup(replacing: .textFormatting) {
-                FontSizeCommands()
-                Divider()
-                Button("Bold") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleBold(_:))) }
-                    .keyboardShortcut("b", modifiers: .command)
-                Button("Italic") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleItalic(_:))) }
-                    .keyboardShortcut("i", modifiers: .command)
-                Button("Strikethrough") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleStrikethrough(_:))) }
-                    .keyboardShortcut("x", modifiers: [.command, .shift])
-                Button("Heading") { performFormattingCommand(selector: #selector(ClearlyTextView.insertHeading(_:))) }
-                    .keyboardShortcut("h", modifiers: [.command, .shift])
-                Divider()
-                Button("Link…") { performFormattingCommand(selector: #selector(ClearlyTextView.insertLink(_:))) }
-                    .keyboardShortcut("k", modifiers: .command)
-                Button("Image…") { performFormattingCommand(selector: #selector(ClearlyTextView.insertImage(_:))) }
-                Divider()
-                Button("Bullet List") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleBulletList(_:))) }
-                Button("Numbered List") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleNumberedList(_:))) }
-                Button("Todo") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleTodoList(_:))) }
-                    .keyboardShortcut("t", modifiers: [.command, .shift])
-                Divider()
-                Button("Quote") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleBlockquote(_:))) }
-                Button("Horizontal Rule") { performFormattingCommand(selector: #selector(ClearlyTextView.insertHorizontalRule(_:))) }
-                Button("Table") { performFormattingCommand(selector: #selector(ClearlyTextView.insertMarkdownTable(_:))) }
-                Divider()
-                Button("Code") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleInlineCode(_:))) }
-                Button("Code Block") { performFormattingCommand(selector: #selector(ClearlyTextView.insertCodeBlock(_:))) }
-                Divider()
-                Button("Math") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleInlineMath(_:))) }
-                Button("Math Block") { performFormattingCommand(selector: #selector(ClearlyTextView.insertMathBlock(_:))) }
-                Divider()
-                Button("Page Break") { performFormattingCommand(selector: #selector(ClearlyTextView.insertPageBreak(_:))) }
-            }
+            OpenWorkspaceCommands()
+            EditorCommands()
             CommandGroup(replacing: .help) {
                 Button("Clearly Help") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
@@ -500,6 +467,12 @@ struct ClearlyApp: App {
                 }
             }
         }
+
+        Window("Workspace", id: WorkspaceScene.id) {
+            WorkspaceView()
+                .preferredColorScheme(resolvedColorScheme)
+        }
+        .defaultSize(width: 1120, height: 780)
 
         Settings {
             #if canImport(Sparkle)
@@ -607,6 +580,56 @@ extension FocusedValues {
 }
 
 // MARK: - Per-document command views
+
+struct EditorCommands: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .printItem) {
+            ExportPrintCommands()
+        }
+        CommandGroup(after: .textEditing) {
+            FindCommand()
+        }
+        CommandGroup(after: .toolbar) {
+            ViewModeCommands()
+            OutlineToggleCommand()
+            LineNumbersToggleCommand()
+            BottomToolbarVisibilityCommand()
+        }
+        CommandGroup(replacing: .textFormatting) {
+            FontSizeCommands()
+            Divider()
+            Button("Bold") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleBold(_:))) }
+                .keyboardShortcut("b", modifiers: .command)
+            Button("Italic") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleItalic(_:))) }
+                .keyboardShortcut("i", modifiers: .command)
+            Button("Strikethrough") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleStrikethrough(_:))) }
+                .keyboardShortcut("x", modifiers: [.command, .shift])
+            Button("Heading") { performFormattingCommand(selector: #selector(ClearlyTextView.insertHeading(_:))) }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+            Divider()
+            Button("Link…") { performFormattingCommand(selector: #selector(ClearlyTextView.insertLink(_:))) }
+                .keyboardShortcut("k", modifiers: .command)
+            Button("Image…") { performFormattingCommand(selector: #selector(ClearlyTextView.insertImage(_:))) }
+            Divider()
+            Button("Bullet List") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleBulletList(_:))) }
+            Button("Numbered List") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleNumberedList(_:))) }
+            Button("Todo") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleTodoList(_:))) }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            Divider()
+            Button("Quote") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleBlockquote(_:))) }
+            Button("Horizontal Rule") { performFormattingCommand(selector: #selector(ClearlyTextView.insertHorizontalRule(_:))) }
+            Button("Table") { performFormattingCommand(selector: #selector(ClearlyTextView.insertMarkdownTable(_:))) }
+            Divider()
+            Button("Code") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleInlineCode(_:))) }
+            Button("Code Block") { performFormattingCommand(selector: #selector(ClearlyTextView.insertCodeBlock(_:))) }
+            Divider()
+            Button("Math") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleInlineMath(_:))) }
+            Button("Math Block") { performFormattingCommand(selector: #selector(ClearlyTextView.insertMathBlock(_:))) }
+            Divider()
+            Button("Page Break") { performFormattingCommand(selector: #selector(ClearlyTextView.insertPageBreak(_:))) }
+        }
+    }
+}
 
 struct ExportPrintCommands: View {
     @FocusedValue(\.exportPDFAction) var exportPDFAction
