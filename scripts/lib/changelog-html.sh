@@ -144,7 +144,7 @@ $items                    </ul>
             </a>
             <div class="flex items-center gap-5 text-zinc-400">
                 <a href="/changelog" class="text-white" aria-current="page">Changelog</a>
-                <a href="https://github.com/Shpigford/clearly" class="hover:text-white transition-colors">GitHub</a>
+                <a href="https://github.com/limboy/clearly" class="hover:text-white transition-colors">GitHub</a>
             </div>
         </div>
     </nav>
@@ -171,7 +171,7 @@ $cards            </div>
         <div class="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-600">
             <span>&copy; 2026</span>
             <div class="flex items-center gap-6">
-                <a href="https://github.com/Shpigford/clearly" class="hover:text-zinc-400 transition-colors">GitHub</a>
+                <a href="https://github.com/limboy/clearly" class="hover:text-zinc-400 transition-colors">GitHub</a>
                 <a href="/changelog" class="hover:text-zinc-400 transition-colors">Changelog</a>
                 <a href="/privacy" class="hover:text-zinc-400 transition-colors">Privacy</a>
                 <a href="https://x.com/Shpigford" class="hover:text-zinc-400 transition-colors">@Shpigford</a>

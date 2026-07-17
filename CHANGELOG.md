@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-07-17
+- Open folders as workspaces, browse their files in a sidebar, and restore the last workspace at launch
+- Use one font family and size setting across the editor and preview
+- Documents opened from the launcher now stay open in both normal and menu-bar modes
+
 ## [3.2.0] - 2026-05-17
 - Open documents auto-reload when they're changed by another app
 - Wikilinks now render properly and no longer break Markdown tables
