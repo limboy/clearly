@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 3.3.1</title>
+      <sparkle:version>3.3.1</sparkle:version>
+      <sparkle:shortVersionString>3.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 17 Jul 2026 12:15:14 +0000</pubDate>
+      <description><![CDATA[<ul><li>Open folders as workspaces, browse their files in a sidebar, and restore the last workspace at launch</li><li>Use one font family and size setting across the editor and preview</li><li>Documents opened from the launcher now stay open in both normal and menu-bar modes</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/limboy/clearly/releases/download/v3.3.1/Clearly.dmg"
+        sparkle:edSignature="6kO6C+fDJ4qtq4MnwbSa3v4GDg+kku4tKMS7wQuhOOd4IIA2P0DSEWKttZAr1zwXIvWR2QPg7BFLNjApC7GlAg=="
+        length="8979391"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 3.2.0</title>
       <sparkle:version>3.2.0</sparkle:version>
       <sparkle:shortVersionString>3.2.0</sparkle:shortVersionString>
