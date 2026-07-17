@@ -43,7 +43,7 @@ struct WorkspaceView: View {
                     outlineState: outlineState,
                     isEditorVisible: currentViewMode == .edit
                 )
-                .frame(width: 240)
+                .frame(width: OutlineView.width)
                 .ignoresSafeArea(.container, edges: .top)
             }
         }

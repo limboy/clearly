@@ -1,7 +1,10 @@
+import AppKit
 import SwiftUI
 import ClearlyCore
 
 struct OutlineView: View {
+    static let width: CGFloat = 240
+
     @ObservedObject var outlineState: OutlineState
     var isEditorVisible: Bool
     @Environment(\.colorScheme) private var colorScheme
@@ -57,6 +60,98 @@ struct OutlineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.outlinePanelBackgroundSwiftUI)
+        .background(OutlineTitlebarReservation(width: Self.width))
+    }
+}
+
+/// Keeps the native document title out of the outline's fixed-width column.
+///
+/// SwiftUI lays a `DocumentGroup` title (and a `NavigationSplitView` title)
+/// across the whole window even when a sibling view owns the trailing edge.
+/// A transparent trailing titlebar accessory makes that ownership visible to
+/// AppKit's title layout while preserving the native title, document icon,
+/// edited indicator, and titlebar dragging behavior.
+private struct OutlineTitlebarReservation: NSViewRepresentable {
+    let width: CGFloat
+
+    final class Coordinator {
+        let accessoryViewController: NSTitlebarAccessoryViewController
+        weak var window: NSWindow?
+        var isActive = true
+
+        init() {
+            let controller = NSTitlebarAccessoryViewController()
+            controller.layoutAttribute = .right
+            controller.view = PassthroughTitlebarView()
+            accessoryViewController = controller
+        }
+
+        func attach(to window: NSWindow, width: CGFloat) {
+            guard isActive else { return }
+
+            if self.window !== window {
+                detach()
+                self.window = window
+            }
+
+            accessoryViewController.view.setFrameSize(
+                NSSize(width: width, height: 1)
+            )
+
+            if !window.titlebarAccessoryViewControllers.contains(where: {
+                $0 === accessoryViewController
+            }) {
+                window.addTitlebarAccessoryViewController(accessoryViewController)
+            }
+        }
+
+        func detach() {
+            guard let window,
+                  let index = window.titlebarAccessoryViewControllers.firstIndex(where: {
+                      $0 === accessoryViewController
+                  }) else {
+                self.window = nil
+                return
+            }
+            window.removeTitlebarAccessoryViewController(at: index)
+            self.window = nil
+        }
+
+        func deactivate() {
+            isActive = false
+            detach()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        attach(from: view, coordinator: context.coordinator)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        attach(from: nsView, coordinator: context.coordinator)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.deactivate()
+    }
+
+    private func attach(from view: NSView, coordinator: Coordinator) {
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            coordinator.attach(to: window, width: width)
+        }
+    }
+}
+
+private final class PassthroughTitlebarView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 

@@ -121,7 +121,8 @@ struct ContentView: View {
                         outlineState: outlineState,
                         isEditorVisible: viewMode == .edit
                     )
-                        .frame(width: 240)
+                    .frame(width: OutlineView.width)
+                    .ignoresSafeArea(.container, edges: .top)
                 }
             }
         }
