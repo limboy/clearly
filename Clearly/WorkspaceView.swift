@@ -104,6 +104,7 @@ private struct WorkspaceSidebar: View {
     @Bindable var workspace: WorkspaceManager
     @State private var selectedFileURL: URL?
     @State private var pendingScrollURL: URL?
+    @State private var pendingManualSelectionURL: URL?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -148,17 +149,25 @@ private struct WorkspaceSidebar: View {
                         != workspace.currentFileURL?.standardizedFileURL else {
                     return
                 }
+                pendingManualSelectionURL = newURL.standardizedFileURL
                 DispatchQueue.main.async {
                     if !workspace.openFile(at: newURL) {
+                        pendingManualSelectionURL = nil
                         selectedFileURL = oldURL
                     }
                 }
             }
             .onChange(of: workspace.currentFileURL) { _, newURL in
+                let wasSelectedManually = newURL.map {
+                    $0.standardizedFileURL == pendingManualSelectionURL
+                } ?? false
+                pendingManualSelectionURL = nil
                 if selectedFileURL?.standardizedFileURL != newURL?.standardizedFileURL {
                     selectedFileURL = newURL
                 }
-                requestScroll(to: newURL, using: proxy)
+                if !wasSelectedManually {
+                    requestScroll(to: newURL, using: proxy)
+                }
             }
             .onChange(of: workspace.tree) { _, _ in
                 guard let pendingScrollURL else { return }
