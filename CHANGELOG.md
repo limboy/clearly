@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-07-17
+- Find controls are clearer and easier to use, with improved actions and menu icons
+- Help and spelling commands are better organized in the menus
+- Preview typography and callout spacing are more polished and readable
+- Nested blockquotes inside callouts now render correctly
+
 ## [3.3.1] - 2026-07-17
 - Open folders as workspaces, browse their files in a sidebar, and restore the last workspace at launch
 - Use one font family and size setting across the editor and preview
