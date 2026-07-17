@@ -5,6 +5,7 @@ struct FindBarView: View {
     @ObservedObject var findState: FindState
     @State private var isFieldFocused = false
     @State private var isReplaceFieldFocused = false
+    @State private var actionColumnWidth: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     private var hasRegexError: Bool { findState.activeMode == .edit && findState.regexError != nil }
@@ -22,6 +23,11 @@ struct FindBarView: View {
         .padding(.vertical, 6)
         .background(Theme.backgroundColorSwiftUI)
         .animation(Theme.Motion.smooth, value: findState.showReplace)
+        .onPreferenceChange(FindBarActionColumnWidthKey.self) { width in
+            if width > 0 {
+                actionColumnWidth = width
+            }
+        }
         .onAppear { isFieldFocused = true }
         .onChange(of: findState.focusRequest) { _, _ in
             isFieldFocused = true
@@ -79,22 +85,36 @@ struct FindBarView: View {
                     .animation(Theme.Motion.hover, value: hasRegexError)
             )
             .help(hasRegexError ? (findState.regexError ?? "") : "")
+            .frame(maxWidth: .infinity)
 
-            HStack(spacing: 2) {
-                FindNavButton(icon: "chevron.left", disabled: !findState.canNavigate) {
-                    findState.navigateToPrevious?()
+            HStack(spacing: 8) {
+                FindControlGroup {
+                    HStack(spacing: 0) {
+                        FindNavButton(icon: "chevron.left", disabled: !findState.canNavigate) {
+                            findState.navigateToPrevious?()
+                        }
+                        FindControlDivider()
+                        FindNavButton(icon: "chevron.right", disabled: !findState.canNavigate) {
+                            findState.navigateToNext?()
+                        }
+                    }
                 }
-                FindNavButton(icon: "chevron.right", disabled: !findState.canNavigate) {
-                    findState.navigateToNext?()
+
+                FindControlGroup {
+                    FindControlButton(title: "Done") {
+                        findState.dismiss()
+                    }
                 }
             }
-
-            Button("Done") {
-                findState.dismiss()
+            .fixedSize()
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: FindBarActionColumnWidthKey.self,
+                        value: proxy.size.width
+                    )
+                }
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.accentColor)
         }
     }
 
@@ -131,18 +151,29 @@ struct FindBarView: View {
                     .strokeBorder(Color.accentColor.opacity(isReplaceFieldFocused ? 0.4 : 0), lineWidth: 1)
                     .animation(Theme.Motion.hover, value: isReplaceFieldFocused)
             )
+            .frame(maxWidth: .infinity)
 
-            Button("Replace All") { findState.editorPerformReplaceAll?() }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(findState.canReplaceAll ? Color.accentColor : Color.secondary)
-                .disabled(!findState.canReplaceAll)
-
-            Button("Replace") { findState.editorPerformReplace?() }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(findState.canReplace ? Color.accentColor : Color.secondary)
-                .disabled(!findState.canReplace)
+            FindControlGroup {
+                HStack(spacing: 0) {
+                    FindControlButton(
+                        title: "Replace",
+                        disabled: !findState.canReplace,
+                        fillsWidth: true
+                    ) {
+                        findState.editorPerformReplace?()
+                    }
+                    FindControlDivider()
+                    FindControlButton(
+                        title: "All",
+                        disabled: !findState.canReplaceAll,
+                        fillsWidth: true
+                    ) {
+                        findState.editorPerformReplaceAll?()
+                    }
+                    .help("Replace all")
+                }
+                .frame(width: actionColumnWidth)
+            }
         }
     }
 
@@ -176,6 +207,78 @@ struct FindBarView: View {
         if hasRegexError { return Color.red.opacity(0.5) }
         if isFieldFocused { return Color.accentColor.opacity(0.4) }
         return Color.clear
+    }
+}
+
+private struct FindControlGroup<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Spacing.cornerRadiusMedium, style: .continuous)
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
+            )
+            .clipShape(
+                RoundedRectangle(cornerRadius: Theme.Spacing.cornerRadiusMedium, style: .continuous)
+            )
+    }
+}
+
+private struct FindControlDivider: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.separatorColor(inDark: colorScheme == .dark))
+            .frame(width: 1, height: 14)
+    }
+}
+
+private struct FindControlButton: View {
+    let title: String
+    var disabled = false
+    var fillsWidth = false
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(disabled ? Color.secondary.opacity(0.45) : Color.primary)
+                .padding(.horizontal, fillsWidth ? 2 : 10)
+                .frame(maxWidth: fillsWidth ? .infinity : nil)
+                .frame(height: 24)
+                .contentShape(Rectangle())
+                .background(
+                    isHovering && !disabled
+                        ? Theme.hoverColor(inDark: colorScheme == .dark)
+                        : Color.clear
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .onHover { hovering in
+            withAnimation(Theme.Motion.hover) {
+                isHovering = hovering
+            }
+        }
+    }
+}
+
+private struct FindBarActionColumnWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -255,12 +358,12 @@ private struct FindNavButton: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(disabled ? .quaternary : (isHovering ? .primary : .secondary))
-                .frame(width: 24, height: 24)
+                .frame(width: 28, height: 24)
+                .contentShape(Rectangle())
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isHovering && !disabled
-                            ? Color.primary.opacity(colorScheme == .dark ? Theme.hoverOpacityDark : Theme.hoverOpacity)
-                            : Color.clear)
+                    isHovering && !disabled
+                        ? Theme.hoverColor(inDark: colorScheme == .dark)
+                        : Color.clear
                 )
         }
         .buttonStyle(.plain)
