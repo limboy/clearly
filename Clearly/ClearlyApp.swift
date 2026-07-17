@@ -49,7 +49,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
-        injectSpellingMenu()
         injectFontSubmenu()
 
         DiagnosticLog.log("didFinishLaunching: launchBehavior=\(launchBehavior), keepRunning=\(keepRunningMenubarOnly), docs=\(NSDocumentController.shared.documents.count)")
@@ -91,6 +90,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateActivationPolicy()
             }
         })
+    }
+
+    func applicationWillUpdate(_ notification: Notification) {
+        // SwiftUI may rebuild the main menu after launch. Reinstall this
+        // idempotent AppKit addition before AppKit updates menu state.
+        injectSpellingMenu()
     }
 
     /// Honor the user's `launchBehavior` preference. Returning `true` tells
@@ -328,9 +333,19 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     /// doesn't include this — but `NSTextView` selectors expect it.
     private func injectSpellingMenu() {
         guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
+        guard let findIndex = editMenu.items.firstIndex(where: {
+            $0.title.hasPrefix("Find")
+                || ($0.keyEquivalent == "f" && $0.keyEquivalentModifierMask.contains(.command))
+        }) else { return }
         guard !editMenu.items.contains(where: { $0.title == "Spelling and Grammar" }) else { return }
 
         let spellingItem = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
+        let spellingImage = NSImage(
+            systemSymbolName: "textformat.abc.dottedunderline",
+            accessibilityDescription: "Spelling and Grammar"
+        )?.withSymbolConfiguration(.init(textStyle: .body, scale: .medium))
+        spellingImage?.isTemplate = true
+        spellingItem.image = spellingImage
         let spellingMenu = NSMenu(title: "Spelling and Grammar")
         let showItem = NSMenuItem(title: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
         showItem.keyEquivalentModifierMask = [.command]
@@ -344,16 +359,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         spellingMenu.addItem(NSMenuItem(title: "Correct Spelling Automatically", action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: ""))
         spellingItem.submenu = spellingMenu
 
-        if let writingToolsIndex = editMenu.items.firstIndex(where: { $0.title == "Writing Tools" }) {
-            let insertIndex = (writingToolsIndex > 0 && editMenu.items[writingToolsIndex - 1].isSeparatorItem)
-                ? writingToolsIndex - 1
-                : writingToolsIndex
-            editMenu.insertItem(spellingItem, at: insertIndex)
-            editMenu.insertItem(.separator(), at: insertIndex)
-        } else {
-            editMenu.addItem(.separator())
-            editMenu.addItem(spellingItem)
-        }
+        editMenu.insertItem(spellingItem, at: findIndex + 1)
     }
 
     /// Shared editor/preview font submenu under View.
@@ -663,8 +669,10 @@ struct FindCommand: View {
     @FocusedValue(\.findState) var findState
 
     var body: some View {
-        Button("Find…") {
+        Button {
             findState?.toggle()
+        } label: {
+            Label("Find…", systemImage: "text.page.badge.magnifyingglass")
         }
         .keyboardShortcut("f", modifiers: .command)
         .disabled(findState == nil)
