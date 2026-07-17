@@ -217,6 +217,11 @@ private struct WorkspaceSidebarNode: View {
                     Button("Copy Path", systemImage: "doc.on.doc") {
                         CopyActions.copyFilePath(node.url)
                     }
+                    Divider()
+                    Button("Move To Trash", systemImage: "trash") {
+                        workspace.moveToTrash(node.url)
+                    }
+                    .keyboardShortcut(.delete, modifiers: .command)
                 }
         } else {
             WorkspaceSidebarLabel(node: node)
@@ -546,6 +551,16 @@ struct WorkspaceCommands: Commands {
                 openFileOrWorkspace()
             }
             .keyboardShortcut("o", modifiers: .command)
+        }
+
+        CommandGroup(after: .saveItem) {
+            Button("Move To Trash", systemImage: "trash") {
+                guard let workspace = focusedWorkspace,
+                      let currentFileURL = workspace.currentFileURL else {
+                    return
+                }
+                workspace.moveToTrash(currentFileURL)
+            }
         }
     }
 

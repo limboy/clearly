@@ -16,6 +16,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private weak var trackedSettingsWindow: NSWindow?
     private var isOpeningSettingsFromMenuBar = false
     private var observers: [Any] = []
+    private var localEventMonitors: [Any] = []
 
     /// Set when a termination request must actually exit, either from the
     /// menubar "Quit Clearly" item or Sparkle's install-and-relaunch flow.
@@ -76,6 +77,26 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateActivationPolicy()
             }
         })
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown,
+            handler: { event in
+                let shortcutModifiers = event.modifierFlags.intersection([
+                    .command, .shift, .option, .control,
+                ])
+                guard !event.isARepeat,
+                      event.charactersIgnoringModifiers == "\u{7f}",
+                      shortcutModifiers == .command,
+                      let workspace = WorkspaceManager.mainWindowManager,
+                      let currentFileURL = workspace.currentFileURL else {
+                    return event
+                }
+                workspace.moveToTrash(currentFileURL)
+                return nil
+            }
+        ) {
+            localEventMonitors.append(monitor)
+        }
     }
 
     func applicationWillUpdate(_ notification: Notification) {
@@ -83,6 +104,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // idempotent AppKit addition before AppKit updates menu state.
         injectSpellingMenu()
         consolidateOpenCommands()
+        configureWorkspaceTrashCommand()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -202,6 +224,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
         }
         observers.removeAll()
+        for monitor in localEventMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+        localEventMonitors.removeAll()
     }
 
     /// Drives the Dock icon. Called from window observers and from the
@@ -356,9 +382,31 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// SwiftUI context-menu shortcuts aren't installed in the app's main
+    /// command chain. Give the File-menu command a real AppKit key equivalent
+    /// so ⌘Delete wins over NSTextView's delete-to-line-start handling.
+    private func configureWorkspaceTrashCommand() {
+        guard let fileMenu = NSApp.mainMenu?.item(withTitle: "File")?.submenu,
+              let item = fileMenu.items.first(where: { $0.title == "Move To Trash" }) else {
+            return
+        }
+        item.target = self
+        item.action = #selector(moveWorkspaceFileToTrash(_:))
+        item.keyEquivalent = "\u{8}"
+        item.keyEquivalentModifierMask = [.command]
+    }
+
     @objc private func setFontAction(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
         UserDefaults.standard.set(value, forKey: FontPreferences.familyKey)
+    }
+
+    @objc private func moveWorkspaceFileToTrash(_ sender: NSMenuItem) {
+        guard let workspace = WorkspaceManager.mainWindowManager,
+              let currentFileURL = workspace.currentFileURL else {
+            return
+        }
+        workspace.moveToTrash(currentFileURL)
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -366,6 +414,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             let current = FontPreferences.fontFamily().rawValue
             menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
             return true
+        }
+        if menuItem.action == #selector(moveWorkspaceFileToTrash(_:)) {
+            return WorkspaceManager.mainWindowManager?.currentFileURL != nil
         }
         return true
     }

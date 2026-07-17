@@ -34,6 +34,10 @@ final class WorkspaceManager {
         liveManagers.contains(where: \.hasVisibleWindow)
     }
 
+    static var mainWindowManager: WorkspaceManager? {
+        liveManagers.first(where: { $0.workspaceWindow?.isMainWindow == true })
+    }
+
     static func windowDidBecomeMain(_ window: NSWindow) {
         if let manager = liveManagers.first(where: { $0.workspaceWindow === window }) {
             activeManager = manager
@@ -389,6 +393,40 @@ final class WorkspaceManager {
                 return candidate
             }
             number += 1
+        }
+    }
+
+    func moveToTrash(_ chosenURL: URL) {
+        let url = chosenURL.standardizedFileURL
+        guard WorkspaceTreeNode.editableExtensions.contains(url.pathExtension.lowercased()),
+              isInsideWorkspace(url),
+              FileManager.default.fileExists(atPath: url.path) else {
+            return
+        }
+
+        if currentFileURL?.standardizedFileURL == url {
+            NotificationCenter.default.post(name: .flushEditorBuffer, object: nil)
+            guard saveCurrentFileIfNeeded() else { return }
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let trashedURLs = try await NSWorkspace.shared.recycle([url])
+                guard trashedURLs[url] != nil else {
+                    self.setError("Clearly couldn’t move “\(url.lastPathComponent)” to Trash.")
+                    return
+                }
+                if self.currentFileURL?.standardizedFileURL == url {
+                    self.clearCurrentFile()
+                }
+                self.refreshTree()
+            } catch {
+                self.setError(
+                    "Clearly couldn’t move “\(url.lastPathComponent)” to Trash.",
+                    error
+                )
+            }
         }
     }
 
