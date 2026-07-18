@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshot.webp" width="720" alt="" />
+  <img src="assets/screenshot-1.webp" width="720" alt="" />
 </p>
 
 Open a Markdown file or a folder workspace. Write with syntax highlighting. Toggle to preview. That's it. Native macOS, no Electron, no subscriptions, no telemetry.

@@ -93,57 +93,7 @@ Handles: xcodegen → archive → export → DMG → notarize → staple → git
 
 Let the script run to completion. On failure, report the error and stop. Do NOT retry automatically.
 
-### Step 6: App Store submission (optional)
-
-For Mac, after the Sparkle release succeeds, ask:
-- question: "Sparkle release complete. Also submit v<VERSION> to the App Store?"
-- header: "App Store"
-- multiSelect: false
-- options: "Yes, submit to App Store", "No, skip App Store"
-
-If yes:
-
-#### 6a: Generate App Store copy
-
-Output three blocks as **raw plain text** (no markdown, no code fences) so the user can paste into App Store Connect:
-
-1. **What's New in This Version** — Cumulative release notes for the listing body. Structure:
-   - Current release: full bullet list, one per user-facing change (verbatim from the CHANGELOG's current section).
-   - Every prior version back to v1.0.0: one line per version, prefixed with `vX.Y.Z — `, summarizing that version's theme in a single sentence. Do NOT repeat every bullet — collapse feature sets into a short list. The goal is a scannable version history, not a 200-line dump.
-   - Use `•` bullets for the current release.
-   - The release script sets the per-version "What's New" (short form) automatically; this cumulative version is only for the ASC listing body.
-
-2. **Promotional Text** (170 characters max) — One sentence. Tone: confident, no fluff.
-
-3. **Description** — Full App Store description. Structure:
-   - Opening one-liner about Clearly
-   - "No Electron. No bloat. No subscription." positioning line
-   - 4-5 short paragraphs, each with a leading phrase, covering: editing, preview, media/diagrams/math, export, native macOS integration
-   - Bullet list of current features
-   - Close with "One-time purchase. No subscription."
-
-Label each block so the user knows which ASC field it's for.
-
-#### 6b: Run the App Store release script
-
-```bash
-./scripts/release-appstore.sh <VERSION>
-```
-
-Handles: strip Sparkle from `project.yml` → archive → export → upload → wait for processing → create version → set "What's New" from `CHANGELOG.md` → attach build → submit for App Review.
-
-On failure after upload, the build is already in ASC — tell the user they can finish manually.
-
-**Recovery from mid-run abort.** The script strips Sparkle keys from `Clearly/Info.plist` at the top and restores them at the bottom. If it dies between those steps (entitlement check fails, archive fails, upload fails, etc.), the working tree is left dirty with Sparkle keys removed from `Info.plist` AND the Xcode project pointing at the App Store variant. Before retrying or running any other build, restore with:
-
-```bash
-git checkout Clearly/Info.plist
-xcodegen generate
-```
-
-Then fix the root cause and retry. A clean `git status` is the signal that recovery is complete.
-
-### Step 7: Push and report
+### Step 6: Push and report
 
 Ensure all commits are on the remote:
 ```bash
@@ -153,7 +103,6 @@ git push
 Tell the user:
 - Version released
 - Link: `https://github.com/Shpigford/clearly/releases/tag/v<VERSION>`
-- Whether App Store submission was included
 
 ## Important Rules
 
