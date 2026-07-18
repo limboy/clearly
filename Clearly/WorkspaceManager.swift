@@ -68,6 +68,7 @@ final class WorkspaceManager {
     private(set) var isLoadingTree = false
     private(set) var errorMessage: String?
     private(set) var expandedFolderPaths: Set<String>
+    private(set) var newFolderParentURL: URL?
 
     var currentText: String = "" {
         didSet {
@@ -232,6 +233,7 @@ final class WorkspaceManager {
         currentText = ""
         lastSavedText = ""
         tree = []
+        newFolderParentURL = nil
         isReplacingDocument = false
 
         startMonitoring(url)
@@ -342,34 +344,40 @@ final class WorkspaceManager {
         }
     }
 
-    func promptForNewFolder(in folder: URL? = nil) {
+    func beginCreatingNewFolder(in folder: URL? = nil) {
         guard let rootURL else { return }
         let targetFolder = folder?.standardizedFileURL ?? rootURL
-        guard isInsideWorkspace(targetFolder) else { return }
+        guard isInsideWorkspace(targetFolder),
+              (try? targetFolder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            return
+        }
 
-        let alert = NSAlert()
-        alert.messageText = "New Folder"
-        alert.informativeText = "Enter a name for the folder."
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
+        setFolderExpanded(true, for: targetFolder)
+        newFolderParentURL = targetFolder
+    }
 
-        let field = NSTextField(string: "")
-        field.placeholderString = "Folder name"
-        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
+    func isCreatingNewFolder(in folder: URL) -> Bool {
+        newFolderParentURL?.standardizedFileURL == folder.standardizedFileURL
+    }
 
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    @discardableResult
+    func createNewFolder(named proposedName: String, in folder: URL) -> Bool {
+        let targetFolder = folder.standardizedFileURL
+        guard isCreatingNewFolder(in: targetFolder),
+              isInsideWorkspace(targetFolder) else {
+            return false
+        }
+
+        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
             setError("That folder name isn’t valid.")
-            return
+            return false
         }
 
         let newFolder = targetFolder.appendingPathComponent(name, isDirectory: true)
         guard !FileManager.default.fileExists(atPath: newFolder.path) else {
             setError("A file or folder named “\(name)” already exists.")
-            return
+            return false
         }
 
         do {
@@ -377,11 +385,19 @@ final class WorkspaceManager {
                 at: newFolder,
                 withIntermediateDirectories: false
             )
+            newFolderParentURL = nil
             setFolderExpanded(true, for: targetFolder)
             refreshTree()
+            return true
         } catch {
             setError("Clearly couldn’t create “\(name)”.", error)
+            return false
         }
+    }
+
+    func cancelCreatingNewFolder(in folder: URL) {
+        guard isCreatingNewFolder(in: folder) else { return }
+        newFolderParentURL = nil
     }
 
     private func nextUntitledFileURL(in folder: URL) -> URL {
