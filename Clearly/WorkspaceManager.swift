@@ -70,6 +70,7 @@ final class WorkspaceManager {
     private(set) var expandedFolderPaths: Set<String>
     private(set) var newFolderParentURL: URL?
     private(set) var renamingURL: URL?
+    var selectedTreeURL: URL?
 
     var currentText: String = "" {
         didSet {
@@ -236,6 +237,7 @@ final class WorkspaceManager {
         tree = []
         newFolderParentURL = nil
         renamingURL = nil
+        selectedTreeURL = nil
         isReplacingDocument = false
 
         startMonitoring(url)
@@ -267,6 +269,7 @@ final class WorkspaceManager {
             let text = String(decoding: data, as: UTF8.self)
             isReplacingDocument = true
             currentFileURL = url
+            selectedTreeURL = url
             currentText = text
             lastSavedText = text
             isReplacingDocument = false
@@ -476,6 +479,10 @@ final class WorkspaceManager {
                let updatedFileURL = rebasedURL(currentFileURL, from: url, to: destination) {
                 self.currentFileURL = updatedFileURL
             }
+            if let selectedTreeURL,
+               let updatedSelection = rebasedURL(selectedTreeURL, from: url, to: destination) {
+                self.selectedTreeURL = updatedSelection
+            }
             if isDirectory {
                 rebaseExpandedFolderPaths(from: url, to: destination)
             }
@@ -543,6 +550,10 @@ final class WorkspaceManager {
                 if let renamingURL = self.renamingURL,
                    self.isSameOrDescendant(renamingURL, of: url) {
                     self.renamingURL = nil
+                }
+                if let selectedTreeURL = self.selectedTreeURL,
+                   self.isSameOrDescendant(selectedTreeURL, of: url) {
+                    self.selectedTreeURL = nil
                 }
                 if isDirectory {
                     self.removeExpandedFolderPaths(inside: url)

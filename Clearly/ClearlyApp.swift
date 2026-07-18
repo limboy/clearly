@@ -88,10 +88,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                       event.charactersIgnoringModifiers == "\u{7f}",
                       shortcutModifiers == .command,
                       let workspace = WorkspaceManager.mainWindowManager,
-                      let currentFileURL = workspace.currentFileURL else {
+                      let targetURL = workspace.selectedTreeURL
+                        ?? workspace.currentFileURL else {
                     return event
                 }
-                workspace.moveToTrash(currentFileURL)
+                workspace.moveToTrash(targetURL)
                 return nil
             }
         ) {
@@ -403,10 +404,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func moveWorkspaceFileToTrash(_ sender: NSMenuItem) {
         guard let workspace = WorkspaceManager.mainWindowManager,
-              let currentFileURL = workspace.currentFileURL else {
+              let targetURL = workspace.selectedTreeURL
+                ?? workspace.currentFileURL else {
             return
         }
-        workspace.moveToTrash(currentFileURL)
+        workspace.moveToTrash(targetURL)
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -416,7 +418,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         if menuItem.action == #selector(moveWorkspaceFileToTrash(_:)) {
-            return WorkspaceManager.mainWindowManager?.currentFileURL != nil
+            guard let workspace = WorkspaceManager.mainWindowManager else {
+                return false
+            }
+            return workspace.selectedTreeURL != nil
+                || workspace.currentFileURL != nil
         }
         return true
     }

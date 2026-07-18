@@ -114,9 +114,19 @@ private struct WorkspaceSidebar: View {
     @State private var pendingScrollURL: URL?
     @State private var pendingManualSelectionURL: URL?
 
+    private var treeSelection: Binding<URL?> {
+        Binding(
+            get: { selectedFileURL },
+            set: { newURL in
+                selectedFileURL = newURL
+                workspace.selectedTreeURL = newURL?.standardizedFileURL
+            }
+        )
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
-            List(selection: $selectedFileURL) {
+            List(selection: treeSelection) {
                 Section {
                     ForEach(workspace.tree) { node in
                         WorkspaceSidebarNode(
@@ -170,8 +180,10 @@ private struct WorkspaceSidebar: View {
             }
             .onAppear {
                 selectedFileURL = workspace.currentFileURL
+                workspace.selectedTreeURL = workspace.currentFileURL
             }
             .onChange(of: selectedFileURL) { oldURL, newURL in
+                workspace.selectedTreeURL = newURL?.standardizedFileURL
                 guard let newURL,
                       newURL.standardizedFileURL
                         != workspace.currentFileURL?.standardizedFileURL else {
@@ -194,17 +206,20 @@ private struct WorkspaceSidebar: View {
                     $0.standardizedFileURL == pendingManualSelectionURL
                 } ?? false
                 pendingManualSelectionURL = nil
-                if selectedFileURL?.standardizedFileURL != newURL?.standardizedFileURL {
-                    selectedFileURL = newURL
+                let targetSelection = workspace.selectedTreeURL ?? newURL
+                if selectedFileURL?.standardizedFileURL
+                    != targetSelection?.standardizedFileURL {
+                    selectedFileURL = targetSelection
                 }
                 if !wasSelectedManually {
-                    requestScroll(to: newURL, using: proxy)
+                    requestScroll(to: targetSelection, using: proxy)
                 }
             }
             .onChange(of: workspace.tree) { _, _ in
                 if let selectedFileURL,
                    !WorkspaceTreeNode.contains(selectedFileURL, in: workspace.tree) {
                     self.selectedFileURL = nil
+                    workspace.selectedTreeURL = nil
                 }
                 guard let pendingScrollURL else { return }
                 requestScroll(to: pendingScrollURL, using: proxy)
@@ -289,7 +304,6 @@ private struct WorkspaceSidebarNode: View {
                     Button("Move To Trash", systemImage: "trash") {
                         workspace.moveToTrash(node.url)
                     }
-                    .keyboardShortcut(.delete, modifiers: .command)
                 }
         } else {
             nodeLabel
@@ -346,7 +360,6 @@ private struct WorkspaceSidebarNode: View {
         Button("Move To Trash", systemImage: "trash") {
             workspace.moveToTrash(node.url)
         }
-        .keyboardShortcut(.delete, modifiers: .command)
     }
 
     @ViewBuilder
@@ -760,10 +773,10 @@ struct WorkspaceCommands: Commands {
         CommandGroup(after: .saveItem) {
             Button("Move To Trash", systemImage: "trash") {
                 guard let workspace = focusedWorkspace,
-                      let currentFileURL = workspace.currentFileURL else {
+                      let targetURL = workspace.selectedTreeURL ?? workspace.currentFileURL else {
                     return
                 }
-                workspace.moveToTrash(currentFileURL)
+                workspace.moveToTrash(targetURL)
             }
         }
     }
