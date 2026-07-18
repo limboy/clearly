@@ -408,7 +408,6 @@ private struct WorkspaceRenameRow: View {
                 }
         } icon: {
             Image(systemName: node.isDirectory ? "folder.fill" : "doc.text")
-                .foregroundStyle(Theme.accentColorSwiftUI)
         }
         .frame(minHeight: 20)
         .onAppear {
@@ -448,7 +447,6 @@ private struct WorkspaceSidebarLabel: View {
                 .lineLimit(1)
         } icon: {
             Image(systemName: iconName)
-                .foregroundStyle(iconColor)
         }
         .frame(minHeight: 20)
         .id(node.url.standardizedFileURL)
@@ -462,15 +460,6 @@ private struct WorkspaceSidebarLabel: View {
             return "doc.text"
         case .image:
             return "photo"
-        }
-    }
-
-    private var iconColor: Color {
-        switch node.kind {
-        case .folder, .markdown:
-            return Theme.accentColorSwiftUI
-        case .image:
-            return Theme.textColorSwiftUI.opacity(0.45)
         }
     }
 }
