@@ -118,8 +118,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
             return false
         }
-        if scheduleDeferredQuitIfPanelInFlight() { return false }
-        return true
+        return false
     }
 
     /// If a launcher / open panel is currently in flight, defer a quit by
