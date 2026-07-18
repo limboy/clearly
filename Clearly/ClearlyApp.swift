@@ -746,7 +746,6 @@ struct EditorCommands: Commands {
             ViewModeCommands()
             OutlineToggleCommand()
             LineNumbersToggleCommand()
-            BottomToolbarVisibilityCommand()
         }
         CommandGroup(replacing: .textFormatting) {
             FontSizeCommands()
@@ -831,21 +830,6 @@ struct OutlineToggleCommand: View {
     }
 }
 
-struct BottomToolbarVisibilityCommand: View {
-    @AppStorage("alwaysShowBottomToolbar") private var alwaysShowBottomToolbar: Bool = false
-
-    var body: some View {
-        Button {
-            alwaysShowBottomToolbar.toggle()
-        } label: {
-            Label(
-                alwaysShowBottomToolbar ? "Hide Toolbar" : "Show Toolbar",
-                systemImage: "rectangle.bottomthird.inset.filled"
-            )
-        }
-        .keyboardShortcut("b", modifiers: [.command, .shift])
-    }
-}
 
 struct LineNumbersToggleCommand: View {
     @AppStorage("showLineNumbers") private var showLineNumbers = false

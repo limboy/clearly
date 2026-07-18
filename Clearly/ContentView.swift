@@ -12,7 +12,8 @@ struct ContentView: View {
     let minimumContentWidth: CGFloat
     let onViewModeChange: ((ViewMode) -> Void)?
 
-    @State private var viewMode: ViewMode
+    private var externalViewModeBinding: Binding<ViewMode>?
+    @State private var internalViewMode: ViewMode
     @StateObject private var outlineState: OutlineState
     @StateObject private var findState = FindState()
     @StateObject private var jumpToLineState = JumpToLineState()
@@ -22,9 +23,6 @@ struct ContentView: View {
     @AppStorage(FontPreferences.familyKey) private var fontFamily = FontPreferences.defaultFamily.rawValue
     @AppStorage("contentWidth") private var contentWidth: String = "off"
     @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
-    @AppStorage("alwaysShowBottomToolbar") private var alwaysShowBottomToolbar: Bool = false
-
-    @State private var isHoveringBottom: Bool = false
 
     /// Stable per-window key for ScrollBridge / SelectionBridge. Re-keyed on
     /// document URL change so two windows on different files don't collide.
@@ -36,6 +34,7 @@ struct ContentView: View {
         outlineState: OutlineState? = nil,
         embedsOutline: Bool = true,
         minimumContentWidth: CGFloat = 600,
+        viewMode: Binding<ViewMode>? = nil,
         onViewModeChange: ((ViewMode) -> Void)? = nil
     ) {
         self._text = text
@@ -43,17 +42,23 @@ struct ContentView: View {
         self._outlineState = StateObject(wrappedValue: outlineState ?? OutlineState())
         self.embedsOutline = embedsOutline
         self.minimumContentWidth = minimumContentWidth
+        self.externalViewModeBinding = viewMode
         self.onViewModeChange = onViewModeChange
         // Never land a blank document in Preview — there'd be nothing to see
         // and no obvious way to edit.
         let raw = UserDefaults.standard.string(forKey: "defaultViewMode") ?? "edit"
         let preferred = ViewMode(rawValue: raw) ?? .edit
         let isBlank = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        self._viewMode = State(initialValue: (preferred == .preview && isBlank) ? .edit : preferred)
+        let initialMode: ViewMode = (preferred == .preview && isBlank) ? .edit : preferred
+        self._internalViewMode = State(initialValue: initialMode)
     }
 
-    private var shouldShowBottomToolbar: Bool {
-        alwaysShowBottomToolbar || isHoveringBottom
+    private var currentViewModeBinding: Binding<ViewMode> {
+        externalViewModeBinding ?? $internalViewMode
+    }
+
+    private var viewMode: ViewMode {
+        currentViewModeBinding.wrappedValue
     }
 
     private var contentWidthEm: CGFloat? {
@@ -79,42 +84,6 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 mainPane
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .bottom) {
-                        ZStack(alignment: .bottom) {
-                            BottomHoverTracker { hovering in
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    isHoveringBottom = hovering
-                                }
-                            }
-                            .frame(height: 96)
-
-                            if shouldShowBottomToolbar {
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: Theme.backgroundColorSwiftUI.opacity(0), location: 0),
-                                        .init(color: Theme.backgroundColorSwiftUI.opacity(0.7), location: 0.55),
-                                        .init(color: Theme.backgroundColorSwiftUI, location: 1)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                                .frame(height: 96)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
-
-                                BottomToolbar(
-                                    viewMode: $viewMode,
-                                    statusBarState: statusBarState,
-                                    outlineState: outlineState,
-                                    fileURL: fileURL,
-                                    documentText: { text }
-                                )
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 6)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                            }
-                        }
-                    }
 
                 if embedsOutline && outlineState.isVisible {
                     OutlineView(
@@ -126,10 +95,14 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: minimumContentWidth, minHeight: 360)
+        .background {
+            if embedsOutline {
+                DocumentToolbarObserver(viewMode: currentViewModeBinding, outlineState: outlineState)
+            }
+        }
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
-        .focusedSceneValue(\.viewMode, $viewMode)
+        .focusedSceneValue(\.viewMode, currentViewModeBinding)
         .focusedSceneValue(\.exportPDFAction) { exportPDF() }
         .focusedSceneValue(\.printDocumentAction) { printDocument() }
         .onAppear {
@@ -183,7 +156,7 @@ struct ContentView: View {
                 positionSyncID: positionSyncID,
                 findState: findState,
                 outlineState: outlineState,
-                extraBottomInset: BottomToolbar.pillHeight + 24,
+                extraBottomInset: 0,
                 showLineNumbers: showLineNumbers,
                 jumpToLineState: jumpToLineState,
                 statusBarState: statusBarState,
@@ -245,5 +218,140 @@ struct ContentView: View {
             fontFamily: fontFamily,
             fileURL: fileURL
         )
+    }
+}
+
+/// Native AppKit NSToolbar observer for single-document windows.
+/// Replaces SwiftUI's .toolbar modifier to prevent BarAppearanceBridge KVO crashes.
+struct DocumentToolbarObserver: NSViewRepresentable {
+    @Binding var viewMode: ViewMode
+    @ObservedObject var outlineState: OutlineState
+
+    final class Holder: NSObject, NSToolbarDelegate, NSToolbarItemValidation {
+        private static let modeItemIdentifier = NSToolbarItem.Identifier("com.sabotage.clearly.document.mode")
+        private static let outlineItemIdentifier = NSToolbarItem.Identifier("com.sabotage.clearly.document.outline")
+
+        weak var window: NSWindow?
+        var viewModeBinding: Binding<ViewMode>?
+        var outlineState: OutlineState?
+
+        private let toolbar = NSToolbar(identifier: NSToolbar.Identifier("document.toolbar.\(UUID().uuidString)"))
+
+        override init() {
+            super.init()
+            toolbar.delegate = self
+            toolbar.displayMode = .iconOnly
+            toolbar.allowsUserCustomization = false
+            toolbar.autosavesConfiguration = false
+        }
+
+        func installToolbar(in window: NSWindow) {
+            guard window.toolbar !== toolbar else {
+                toolbar.validateVisibleItems()
+                return
+            }
+            self.window = window
+            window.toolbar = toolbar
+            window.toolbarStyle = .unified
+        }
+
+        func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+            [
+                .flexibleSpace,
+                Self.modeItemIdentifier,
+                Self.outlineItemIdentifier,
+            ]
+        }
+
+        func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+            toolbarDefaultItemIdentifiers(toolbar)
+        }
+
+        func toolbar(
+            _ toolbar: NSToolbar,
+            itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+            willBeInsertedIntoToolbar flag: Bool
+        ) -> NSToolbarItem? {
+            if itemIdentifier == Self.modeItemIdentifier {
+                let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+                updateModeItem(item)
+                item.target = self
+                item.action = #selector(toggleViewMode(_:))
+                item.isBordered = true
+                item.visibilityPriority = .high
+                return item
+            }
+
+            if itemIdentifier == Self.outlineItemIdentifier {
+                let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+                item.label = "Outline"
+                item.paletteLabel = "Outline"
+                item.toolTip = "Toggle Outline"
+                item.image = NSImage(
+                    systemSymbolName: "list.bullet.indent",
+                    accessibilityDescription: "Toggle Outline"
+                )
+                item.target = self
+                item.action = #selector(toggleOutline(_:))
+                item.isBordered = true
+                item.visibilityPriority = .high
+                return item
+            }
+
+            return nil
+        }
+
+        func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+            if item.itemIdentifier == Self.modeItemIdentifier {
+                updateModeItem(item)
+                return true
+            }
+            return true
+        }
+
+        private func updateModeItem(_ item: NSToolbarItem) {
+            let isEdit = viewModeBinding?.wrappedValue == .edit
+            let title = isEdit ? "Preview" : "Edit"
+            let imageName = isEdit ? "eye" : "pencil"
+            item.label = title
+            item.paletteLabel = title
+            item.toolTip = isEdit ? "Switch to Preview" : "Switch to Edit"
+            item.image = NSImage(
+                systemSymbolName: imageName,
+                accessibilityDescription: title
+            )
+        }
+
+        @MainActor @objc private func toggleViewMode(_ sender: NSToolbarItem) {
+            guard let binding = viewModeBinding else { return }
+            binding.wrappedValue = (binding.wrappedValue == .edit ? .preview : .edit)
+            toolbar.validateVisibleItems()
+        }
+
+        @MainActor @objc private func toggleOutline(_ sender: NSToolbarItem) {
+            outlineState?.isVisible.toggle()
+        }
+    }
+
+    func makeCoordinator() -> Holder { Holder() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.viewModeBinding = _viewMode
+        context.coordinator.outlineState = outlineState
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            context.coordinator.installToolbar(in: window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.viewModeBinding = _viewMode
+        context.coordinator.outlineState = outlineState
+        DispatchQueue.main.async { [weak nsView] in
+            guard let window = nsView?.window else { return }
+            context.coordinator.installToolbar(in: window)
+        }
     }
 }

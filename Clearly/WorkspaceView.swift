@@ -58,6 +58,7 @@ struct WorkspaceView: View {
                         outlineState: outlineState,
                         embedsOutline: false,
                         minimumContentWidth: 400,
+                        viewMode: $currentViewMode,
                         onViewModeChange: { currentViewMode = $0 }
                     )
                 } else {
@@ -77,7 +78,11 @@ struct WorkspaceView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 520)
-        .background(WorkspaceWindowObserver(workspace: workspace))
+        .background(WorkspaceWindowObserver(
+            workspace: workspace,
+            currentViewMode: $currentViewMode,
+            outlineState: outlineState
+        ))
         .focusedSceneValue(\.workspaceManager, workspace)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .alert(
@@ -553,14 +558,24 @@ private struct WorkspaceEmptyDetail: View {
 /// Captures the SwiftUI-owned workspace window without taking over its delegate.
 struct WorkspaceWindowObserver: NSViewRepresentable {
     let workspace: WorkspaceManager
+    @Binding var currentViewMode: ViewMode
+    @ObservedObject var outlineState: OutlineState
 
     final class Holder: NSObject, NSToolbarDelegate, NSToolbarItemValidation {
         private static let newFileItemIdentifier = NSToolbarItem.Identifier(
             "com.sabotage.clearly.workspace.newFile"
         )
+        private static let modeItemIdentifier = NSToolbarItem.Identifier(
+            "com.sabotage.clearly.workspace.mode"
+        )
+        private static let outlineItemIdentifier = NSToolbarItem.Identifier(
+            "com.sabotage.clearly.workspace.outline"
+        )
 
         weak var window: NSWindow?
         weak var workspace: WorkspaceManager?
+        var currentViewModeBinding: Binding<ViewMode>?
+        var outlineState: OutlineState?
         private let toolbar = NSToolbar(
             identifier: NSToolbar.Identifier("workspace.\(UUID().uuidString)")
         )
@@ -615,10 +630,12 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
 
         func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
             [
-                .flexibleSpace,
-                Self.newFileItemIdentifier,
                 .toggleSidebar,
+                Self.newFileItemIdentifier,
                 .sidebarTrackingSeparator,
+                .flexibleSpace,
+                Self.modeItemIdentifier,
+                Self.outlineItemIdentifier,
             ]
         }
 
@@ -631,29 +648,92 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
             itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
             willBeInsertedIntoToolbar flag: Bool
         ) -> NSToolbarItem? {
-            guard itemIdentifier == Self.newFileItemIdentifier else { return nil }
+            if itemIdentifier == Self.newFileItemIdentifier {
+                let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+                item.label = "New File"
+                item.paletteLabel = "New File"
+                item.toolTip = "New File"
+                item.image = NSImage(
+                    systemSymbolName: "plus",
+                    accessibilityDescription: "New File"
+                )
+                item.target = self
+                item.action = #selector(createNewFile(_:))
+                item.isBordered = true
+                item.visibilityPriority = .high
+                return item
+            }
 
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "New File"
-            item.paletteLabel = "New File"
-            item.toolTip = "New File"
-            item.image = NSImage(
-                systemSymbolName: "plus",
-                accessibilityDescription: "New File"
-            )
-            item.target = self
-            item.action = #selector(createNewFile(_:))
-            item.isBordered = true
-            item.visibilityPriority = .high
-            return item
+            if itemIdentifier == Self.modeItemIdentifier {
+                let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+                let isEdit = currentViewModeBinding?.wrappedValue == .edit
+                let title = isEdit ? "Preview" : "Edit"
+                let imageName = isEdit ? "eye" : "pencil"
+                item.label = title
+                item.paletteLabel = title
+                item.toolTip = isEdit ? "Switch to Preview" : "Switch to Edit"
+                item.image = NSImage(
+                    systemSymbolName: imageName,
+                    accessibilityDescription: title
+                )
+                item.target = self
+                item.action = #selector(toggleViewMode(_:))
+                item.isBordered = true
+                item.visibilityPriority = .high
+                return item
+            }
+
+            if itemIdentifier == Self.outlineItemIdentifier {
+                let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+                item.label = "Outline"
+                item.paletteLabel = "Outline"
+                item.toolTip = "Toggle Outline"
+                item.image = NSImage(
+                    systemSymbolName: "list.bullet.indent",
+                    accessibilityDescription: "Toggle Outline"
+                )
+                item.target = self
+                item.action = #selector(toggleOutline(_:))
+                item.isBordered = true
+                item.visibilityPriority = .high
+                return item
+            }
+
+            return nil
         }
 
         func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-            item.itemIdentifier != Self.newFileItemIdentifier || workspace?.rootURL != nil
+            if item.itemIdentifier == Self.newFileItemIdentifier {
+                return workspace?.rootURL != nil
+            }
+            if item.itemIdentifier == Self.modeItemIdentifier {
+                let isEdit = currentViewModeBinding?.wrappedValue == .edit
+                let title = isEdit ? "Preview" : "Edit"
+                let imageName = isEdit ? "eye" : "pencil"
+                item.label = title
+                item.paletteLabel = title
+                item.toolTip = isEdit ? "Switch to Preview" : "Switch to Edit"
+                item.image = NSImage(
+                    systemSymbolName: imageName,
+                    accessibilityDescription: title
+                )
+                return true
+            }
+            return true
         }
 
         @MainActor @objc private func createNewFile(_ sender: NSToolbarItem) {
             workspace?.createNewFile()
+        }
+
+        @MainActor @objc private func toggleViewMode(_ sender: NSToolbarItem) {
+            guard let binding = currentViewModeBinding else { return }
+            binding.wrappedValue = (binding.wrappedValue == .edit ? .preview : .edit)
+            toolbar.validateVisibleItems()
+        }
+
+        @MainActor @objc private func toggleOutline(_ sender: NSToolbarItem) {
+            outlineState?.isVisible.toggle()
         }
     }
 
@@ -661,11 +741,15 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
+        context.coordinator.currentViewModeBinding = $currentViewMode
+        context.coordinator.outlineState = outlineState
         register(from: view, context: context)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.currentViewModeBinding = $currentViewMode
+        context.coordinator.outlineState = outlineState
         register(from: nsView, context: context)
     }
 
