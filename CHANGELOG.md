@@ -1,6 +1,13 @@
 # Changelog
 
 ## [Unreleased]
+
+## [3.4.0] - 2026-07-18
+- Create, rename, and move files and folders to Trash directly within the workspace sidebar
+- Workspace sidebar maintains selection and position when managing files
+- Closing the last window no longer quits the app unexpectedly
+- Refined workspace window behavior and launch experience
+- Polished settings layout, About view, and outline panel titlebar spacing
 - Installing an update now quits and relaunches Clearly correctly when menu-bar mode is enabled
 
 ## [3.3.2] - 2026-07-17
