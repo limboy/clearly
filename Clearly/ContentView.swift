@@ -312,7 +312,7 @@ struct DocumentToolbarObserver: NSViewRepresentable {
         private func updateModeItem(_ item: NSToolbarItem) {
             let isEdit = viewModeBinding?.wrappedValue == .edit
             let title = isEdit ? "Preview" : "Edit"
-            let imageName = isEdit ? "eye" : "pencil"
+            let imageName = isEdit ? "text.viewfinder" : "pencil"
             item.label = title
             item.paletteLabel = title
             item.toolTip = isEdit ? "Switch to Preview" : "Switch to Edit"

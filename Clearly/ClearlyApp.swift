@@ -861,7 +861,7 @@ struct ViewModeCommands: View {
         Button {
             mode?.wrappedValue = .preview
         } label: {
-            Label("Preview", systemImage: "eye")
+            Label("Preview", systemImage: "text.viewfinder")
         }
         .keyboardShortcut("2", modifiers: .command)
         .disabled(mode == nil)

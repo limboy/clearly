@@ -668,7 +668,7 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
                 let item = NSToolbarItem(itemIdentifier: itemIdentifier)
                 let isEdit = currentViewModeBinding?.wrappedValue == .edit
                 let title = isEdit ? "Preview" : "Edit"
-                let imageName = isEdit ? "eye" : "pencil"
+                let imageName = isEdit ? "text.viewfinder" : "pencil"
                 item.label = title
                 item.paletteLabel = title
                 item.toolTip = isEdit ? "Switch to Preview" : "Switch to Edit"
@@ -709,7 +709,7 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
             if item.itemIdentifier == Self.modeItemIdentifier {
                 let isEdit = currentViewModeBinding?.wrappedValue == .edit
                 let title = isEdit ? "Preview" : "Edit"
-                let imageName = isEdit ? "eye" : "pencil"
+                let imageName = isEdit ? "text.viewfinder" : "pencil"
                 item.label = title
                 item.paletteLabel = title
                 item.toolTip = isEdit ? "Switch to Preview" : "Switch to Edit"
