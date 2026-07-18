@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-07-18
+- Resizable Outline panel lets you drag to adjust its width
+- Mode switch and outline buttons are now located in the top bar
+- Folder title displays in the window title bar when no document is open in a workspace
+- Smooth workspace sidebar file selection with fixed highlight colors and no unwanted autoscroll
+
+
 ## [3.4.1] - 2026-07-18
 - Open recent files and workspaces directly from the File > Open Recent menu
 
