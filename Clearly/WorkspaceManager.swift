@@ -553,7 +553,7 @@ final class WorkspaceManager {
                 }
                 if let selectedTreeURL = self.selectedTreeURL,
                    self.isSameOrDescendant(selectedTreeURL, of: url) {
-                    self.selectedTreeURL = nil
+                    self.selectedTreeURL = self.currentFileURL
                 }
                 if isDirectory {
                     self.removeExpandedFolderPaths(inside: url)

@@ -218,8 +218,12 @@ private struct WorkspaceSidebar: View {
             .onChange(of: workspace.tree) { _, _ in
                 if let selectedFileURL,
                    !WorkspaceTreeNode.contains(selectedFileURL, in: workspace.tree) {
-                    self.selectedFileURL = nil
-                    workspace.selectedTreeURL = nil
+                    let fallbackURL = workspace.currentFileURL.flatMap {
+                        WorkspaceTreeNode.contains($0, in: workspace.tree) ? $0 : nil
+                    }
+                    self.selectedFileURL = fallbackURL
+                    workspace.selectedTreeURL = fallbackURL
+                    requestScroll(to: fallbackURL, using: proxy)
                 }
                 guard let pendingScrollURL else { return }
                 requestScroll(to: pendingScrollURL, using: proxy)
