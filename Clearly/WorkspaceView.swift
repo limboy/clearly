@@ -119,7 +119,14 @@ private struct WorkspaceSidebar: View {
             List(selection: $selectedFileURL) {
                 Section {
                     ForEach(workspace.tree) { node in
-                        WorkspaceSidebarNode(node: node, workspace: workspace)
+                        WorkspaceSidebarNode(
+                            node: node,
+                            workspace: workspace,
+                            onRenamed: { renamedURL in
+                                selectedFileURL = renamedURL
+                                requestScroll(to: renamedURL, using: proxy)
+                            }
+                        )
                     }
                     if let rootURL = workspace.rootURL,
                        workspace.isCreatingNewFolder(in: rootURL) {
@@ -151,6 +158,15 @@ private struct WorkspaceSidebar: View {
                 Button("New Folder", systemImage: "folder.badge.plus") {
                     workspace.beginCreatingNewFolder()
                 }
+            }
+            .onKeyPress(.return) {
+                guard workspace.renamingURL == nil,
+                      workspace.newFolderParentURL == nil,
+                      let selectedFileURL,
+                      workspace.beginRenaming(selectedFileURL) else {
+                    return .ignored
+                }
+                return .handled
             }
             .onAppear {
                 selectedFileURL = workspace.currentFileURL
@@ -231,29 +247,34 @@ private struct WorkspaceSidebar: View {
 private struct WorkspaceSidebarNode: View {
     let node: WorkspaceTreeNode
     @Bindable var workspace: WorkspaceManager
+    let onRenamed: (URL) -> Void
 
     var body: some View {
         if node.isDirectory {
             if node.displayChildren != nil || workspace.isCreatingNewFolder(in: node.url) {
                 DisclosureGroup(isExpanded: expandedBinding) {
                     ForEach(node.children ?? []) { child in
-                        WorkspaceSidebarNode(node: child, workspace: workspace)
+                        WorkspaceSidebarNode(
+                            node: child,
+                            workspace: workspace,
+                            onRenamed: onRenamed
+                        )
                     }
                     if workspace.isCreatingNewFolder(in: node.url) {
                         WorkspaceNewFolderRow(parentURL: node.url, workspace: workspace)
                     }
                 } label: {
-                    WorkspaceSidebarLabel(node: node)
+                    nodeLabel
                 }
                 .tag(node.url)
                 .contextMenu { folderContextMenu }
             } else {
-                WorkspaceSidebarLabel(node: node)
+                nodeLabel
                     .tag(node.url)
                     .contextMenu { folderContextMenu }
             }
         } else if node.isEditable {
-            WorkspaceSidebarLabel(node: node)
+            nodeLabel
                 .tag(node.url)
                 .contextMenu {
                     creationContextMenu
@@ -271,7 +292,7 @@ private struct WorkspaceSidebarNode: View {
                     .keyboardShortcut(.delete, modifiers: .command)
                 }
         } else {
-            WorkspaceSidebarLabel(node: node)
+            nodeLabel
                 .opacity(0.48)
                 .contextMenu {
                     creationContextMenu
@@ -283,6 +304,19 @@ private struct WorkspaceSidebarNode: View {
                         CopyActions.copyFilePath(node.url)
                     }
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var nodeLabel: some View {
+        if workspace.isRenaming(node.url) {
+            WorkspaceRenameRow(
+                node: node,
+                workspace: workspace,
+                onRenamed: onRenamed
+            )
+        } else {
+            WorkspaceSidebarLabel(node: node)
         }
     }
 
@@ -323,6 +357,72 @@ private struct WorkspaceSidebarNode: View {
         Button("New Folder", systemImage: "folder.badge.plus") {
             workspace.beginCreatingNewFolder(in: node.url.deletingLastPathComponent())
         }
+    }
+}
+
+private struct WorkspaceRenameRow: View {
+    let node: WorkspaceTreeNode
+    @Bindable var workspace: WorkspaceManager
+    let onRenamed: (URL) -> Void
+    @State private var name: String
+    @FocusState private var isNameFieldFocused: Bool
+
+    init(
+        node: WorkspaceTreeNode,
+        workspace: WorkspaceManager,
+        onRenamed: @escaping (URL) -> Void
+    ) {
+        self.node = node
+        self.workspace = workspace
+        self.onRenamed = onRenamed
+        _name = State(initialValue: node.displayName)
+    }
+
+    var body: some View {
+        Label {
+            TextField("Name", text: $name)
+                .textFieldStyle(.plain)
+                .font(Theme.Typography.sidebarRow)
+                .focused($isNameFieldFocused)
+                .onSubmit {
+                    submit()
+                }
+                .onExitCommand {
+                    workspace.cancelRenaming(node.url)
+                }
+                .onChange(of: isNameFieldFocused) { wasFocused, isFocused in
+                    if wasFocused && !isFocused {
+                        submit()
+                    }
+                }
+        } icon: {
+            Image(systemName: node.isDirectory ? "folder.fill" : "doc.text")
+                .foregroundStyle(Theme.accentColorSwiftUI)
+        }
+        .frame(minHeight: 20)
+        .onAppear {
+            DispatchQueue.main.async {
+                isNameFieldFocused = true
+            }
+        }
+        .onChange(of: workspace.errorMessage) { previousError, error in
+            guard previousError != nil,
+                  error == nil,
+                  workspace.isRenaming(node.url) else {
+                return
+            }
+            DispatchQueue.main.async {
+                isNameFieldFocused = true
+            }
+        }
+    }
+
+    private func submit() {
+        guard workspace.isRenaming(node.url),
+              let renamedURL = workspace.renameItem(at: node.url, to: name) else {
+            return
+        }
+        onRenamed(renamedURL)
     }
 }
 

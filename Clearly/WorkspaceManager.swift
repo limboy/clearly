@@ -69,6 +69,7 @@ final class WorkspaceManager {
     private(set) var errorMessage: String?
     private(set) var expandedFolderPaths: Set<String>
     private(set) var newFolderParentURL: URL?
+    private(set) var renamingURL: URL?
 
     var currentText: String = "" {
         didSet {
@@ -234,6 +235,7 @@ final class WorkspaceManager {
         lastSavedText = ""
         tree = []
         newFolderParentURL = nil
+        renamingURL = nil
         isReplacingDocument = false
 
         startMonitoring(url)
@@ -400,6 +402,97 @@ final class WorkspaceManager {
         newFolderParentURL = nil
     }
 
+    // MARK: - Renaming workspace items
+
+    @discardableResult
+    func beginRenaming(_ chosenURL: URL) -> Bool {
+        let url = chosenURL.standardizedFileURL
+        let isDirectory =
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        let isEditableFile =
+            WorkspaceTreeNode.editableExtensions.contains(url.pathExtension.lowercased())
+        guard newFolderParentURL == nil,
+              renamingURL == nil,
+              (isDirectory || isEditableFile),
+              isInsideWorkspace(url),
+              url != rootURL?.standardizedFileURL,
+              FileManager.default.fileExists(atPath: url.path) else {
+            return false
+        }
+
+        renamingURL = url
+        return true
+    }
+
+    func isRenaming(_ url: URL) -> Bool {
+        renamingURL?.standardizedFileURL == url.standardizedFileURL
+    }
+
+    @discardableResult
+    func renameItem(at chosenURL: URL, to proposedName: String) -> URL? {
+        let url = chosenURL.standardizedFileURL
+        guard isRenaming(url), isInsideWorkspace(url) else { return nil }
+
+        let isDirectory =
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
+            setError("That name isn’t valid.")
+            return nil
+        }
+
+        let destinationName: String
+        if isDirectory {
+            destinationName = name
+        } else {
+            let fileExtension = url.pathExtension
+            let extensionSuffix = ".\(fileExtension)"
+            destinationName = name.lowercased().hasSuffix(extensionSuffix.lowercased())
+                ? name
+                : name + extensionSuffix
+        }
+
+        let destination = url.deletingLastPathComponent()
+            .appendingPathComponent(destinationName, isDirectory: isDirectory)
+            .standardizedFileURL
+        if destination == url {
+            renamingURL = nil
+            return url
+        }
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            setError("A file or folder named “\(destinationName)” already exists.")
+            return nil
+        }
+
+        if let currentFileURL,
+           isSameOrDescendant(currentFileURL, of: url) {
+            NotificationCenter.default.post(name: .flushEditorBuffer, object: nil)
+            guard saveCurrentFileIfNeeded() else { return nil }
+        }
+
+        do {
+            try FileManager.default.moveItem(at: url, to: destination)
+            if let currentFileURL,
+               let updatedFileURL = rebasedURL(currentFileURL, from: url, to: destination) {
+                self.currentFileURL = updatedFileURL
+            }
+            if isDirectory {
+                rebaseExpandedFolderPaths(from: url, to: destination)
+            }
+            renamingURL = nil
+            refreshTree()
+            return destination
+        } catch {
+            setError("Clearly couldn’t rename “\(url.lastPathComponent)”.", error)
+            return nil
+        }
+    }
+
+    func cancelRenaming(_ url: URL) {
+        guard isRenaming(url) else { return }
+        renamingURL = nil
+    }
+
     private func nextUntitledFileURL(in folder: URL) -> URL {
         var number = 1
         while true {
@@ -446,6 +539,10 @@ final class WorkspaceManager {
                 if let newFolderParentURL = self.newFolderParentURL,
                    self.isSameOrDescendant(newFolderParentURL, of: url) {
                     self.newFolderParentURL = nil
+                }
+                if let renamingURL = self.renamingURL,
+                   self.isSameOrDescendant(renamingURL, of: url) {
+                    self.renamingURL = nil
                 }
                 if isDirectory {
                     self.removeExpandedFolderPaths(inside: url)
@@ -618,6 +715,23 @@ final class WorkspaceManager {
             $0 != folderPath && !$0.hasPrefix(folderPath + "/")
         })
         UserDefaults.standard.set(Array(expandedFolderPaths), forKey: Self.expandedPathsKey)
+    }
+
+    private func rebaseExpandedFolderPaths(from oldURL: URL, to newURL: URL) {
+        let oldPath = oldURL.standardizedFileURL.path
+        let newPath = newURL.standardizedFileURL.path
+        expandedFolderPaths = Set(expandedFolderPaths.map { path in
+            guard path == oldPath || path.hasPrefix(oldPath + "/") else { return path }
+            return newPath + path.dropFirst(oldPath.count)
+        })
+        UserDefaults.standard.set(Array(expandedFolderPaths), forKey: Self.expandedPathsKey)
+    }
+
+    private func rebasedURL(_ url: URL, from oldURL: URL, to newURL: URL) -> URL? {
+        guard isSameOrDescendant(url, of: oldURL) else { return nil }
+        let oldPath = oldURL.standardizedFileURL.path
+        let suffix = url.standardizedFileURL.path.dropFirst(oldPath.count)
+        return URL(fileURLWithPath: newURL.standardizedFileURL.path + suffix)
     }
 
     private func clearCurrentFileIfDeleted() {
