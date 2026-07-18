@@ -32,6 +32,7 @@ extension FocusedValues {
 /// A macOS workspace window: a persistent folder tree on the left and
 /// Clearly's existing editor/preview surface on the right.
 struct WorkspaceView: View {
+    @Environment(\.openWindow) private var openWindow
     @State private var workspace: WorkspaceManager
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @StateObject private var outlineState = OutlineState()
@@ -95,6 +96,11 @@ struct WorkspaceView: View {
             }
         } message: {
             Text(workspace.errorMessage ?? "")
+        }
+        .onAppear {
+            ClearlyAppDelegate.shared?.openWorkspaceWindowClosure = { [openWindow] url in
+                openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+            }
         }
         .onDisappear {
             _ = workspace.prepareForWindowClose()
@@ -719,6 +725,9 @@ struct WorkspaceCommands: Commands {
 
     private func openFileOrWorkspace() {
         ClearlyAppDelegate.shared?.ensureRegularAndActivate()
+        ClearlyAppDelegate.shared?.openWorkspaceWindowClosure = { [openWindow] url in
+            openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+        }
 
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -740,6 +749,7 @@ struct WorkspaceCommands: Commands {
                     id: WorkspaceScene.id,
                     value: WorkspaceScene.Value(folderURL: url)
                 )
+                NSDocumentController.shared.noteNewRecentDocumentURL(url)
             }
             return
         }
@@ -747,6 +757,8 @@ struct WorkspaceCommands: Commands {
         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
             if let error {
                 NSAlert(error: error).runModal()
+            } else {
+                NSDocumentController.shared.noteNewRecentDocumentURL(url)
             }
         }
     }

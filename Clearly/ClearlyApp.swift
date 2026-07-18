@@ -10,8 +10,10 @@ import Sparkle
 // MARK: - App Delegate
 
 @MainActor
-final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
+final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static private(set) weak var shared: ClearlyAppDelegate?
+
+    var openWorkspaceWindowClosure: ((URL) -> Void)?
 
     private weak var trackedSettingsWindow: NSWindow?
     private var isOpeningSettingsFromMenuBar = false
@@ -105,6 +107,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // idempotent AppKit addition before AppKit updates menu state.
         injectSpellingMenu()
         consolidateOpenCommands()
+        injectOpenRecentMenu()
         configureWorkspaceTrashCommand()
     }
 
@@ -382,6 +385,36 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Injects an "Open Recent" submenu under File if not already present.
+    private func injectOpenRecentMenu() {
+        guard let fileMenu = NSApp.mainMenu?.item(withTitle: "File")?.submenu else { return }
+        guard !fileMenu.items.contains(where: {
+            $0.title == "Open Recent" || $0.submenu?.title == "Open Recent"
+        }) else { return }
+
+        let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        let clockImage = NSImage(
+            systemSymbolName: "clock",
+            accessibilityDescription: "Open Recent"
+        )?.withSymbolConfiguration(.init(textStyle: .body, scale: .medium))
+        clockImage?.isTemplate = true
+        openRecentItem.image = clockImage
+
+        let recentMenu = NSMenu(title: "Open Recent")
+        recentMenu.delegate = self
+        openRecentItem.submenu = recentMenu
+
+        if let openIndex = fileMenu.items.firstIndex(where: {
+            $0.title.replacingOccurrences(of: "…", with: "...").hasPrefix("Open...")
+        }) {
+            fileMenu.insertItem(openRecentItem, at: openIndex + 1)
+        } else if let newIndex = fileMenu.items.firstIndex(where: { $0.title.hasPrefix("New") }) {
+            fileMenu.insertItem(openRecentItem, at: newIndex + 1)
+        } else {
+            fileMenu.insertItem(openRecentItem, at: 0)
+        }
+    }
+
     /// SwiftUI context-menu shortcuts aren't installed in the app's main
     /// command chain. Give the File-menu command a real AppKit key equivalent
     /// so ⌘Delete wins over NSTextView's delete-to-line-start handling.
@@ -424,6 +457,76 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 || workspace.currentFileURL != nil
         }
         return true
+    }
+
+    // MARK: - NSMenuDelegate (Open Recent)
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == "Open Recent" else { return }
+        menu.removeAllItems()
+
+        let recentURLs = NSDocumentController.shared.recentDocumentURLs
+        if recentURLs.isEmpty {
+            let emptyItem = NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
+            emptyItem.target = self
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+            return
+        }
+
+        for url in recentURLs {
+            let title = url.lastPathComponent
+            let item = NSMenuItem(title: title, action: #selector(openRecentDocumentItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = url
+
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: 16, height: 16)
+            item.image = icon
+
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+
+        let clearItem = NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "")
+        clearItem.target = self
+        menu.addItem(clearItem)
+    }
+
+    @objc private func openRecentDocumentItem(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openURL(url)
+    }
+
+    @objc private func clearRecentDocuments(_ sender: NSMenuItem) {
+        NSDocumentController.shared.clearRecentDocuments(sender)
+    }
+
+    func openURL(_ url: URL) {
+        ensureRegularAndActivate()
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        if isDirectory {
+            if let activeWorkspace = WorkspaceManager.active, activeWorkspace.rootURL == nil {
+                activeWorkspace.attachWorkspace(at: url)
+            } else if let closure = openWorkspaceWindowClosure {
+                closure(url)
+            }
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        } else {
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+                if let error {
+                    NSAlert(error: error).runModal()
+                }
+            }
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            openURL(url)
+        }
     }
 }
 

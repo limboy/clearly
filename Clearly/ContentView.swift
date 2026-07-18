@@ -136,6 +136,9 @@ struct ContentView: View {
             outlineState.parseHeadings(from: text)
             statusBarState.updateText(text)
             onViewModeChange?(viewMode)
+            if let fileURL {
+                NSDocumentController.shared.noteNewRecentDocumentURL(fileURL)
+            }
         }
         .onChange(of: viewMode) { _, newMode in
             onViewModeChange?(newMode)
@@ -144,10 +147,13 @@ struct ContentView: View {
             outlineState.parseHeadings(from: newText)
             statusBarState.updateText(newText)
         }
-        .onChange(of: fileURL) { _, _ in
+        .onChange(of: fileURL) { _, newURL in
             // Re-key bridges when the document is saved/renamed so a new
             // file's scroll position doesn't inherit the old fraction.
             positionSyncID = UUID().uuidString
+            if let newURL {
+                NSDocumentController.shared.noteNewRecentDocumentURL(newURL)
+            }
         }
         .watchExternalChanges(fileURL: fileURL, text: $text) { url in
             // Sync SwiftUI's underlying NSDocument's fileModificationDate to

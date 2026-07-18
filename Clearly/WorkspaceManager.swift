@@ -183,6 +183,7 @@ final class WorkspaceManager {
 
         UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
         replaceWorkspaceRoot(with: url)
+        NSDocumentController.shared.noteNewRecentDocumentURL(url)
         return true
     }
 
