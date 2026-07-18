@@ -186,6 +186,10 @@ private struct WorkspaceSidebar: View {
                 }
             }
             .onChange(of: workspace.tree) { _, _ in
+                if let selectedFileURL,
+                   !WorkspaceTreeNode.contains(selectedFileURL, in: workspace.tree) {
+                    self.selectedFileURL = nil
+                }
                 guard let pendingScrollURL else { return }
                 requestScroll(to: pendingScrollURL, using: proxy)
             }
@@ -304,6 +308,11 @@ private struct WorkspaceSidebarNode: View {
         Button("Copy Path", systemImage: "doc.on.doc") {
             CopyActions.copyFilePath(node.url)
         }
+        Divider()
+        Button("Move To Trash", systemImage: "trash") {
+            workspace.moveToTrash(node.url)
+        }
+        .keyboardShortcut(.delete, modifiers: .command)
     }
 
     @ViewBuilder

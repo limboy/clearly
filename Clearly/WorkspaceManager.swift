@@ -414,13 +414,19 @@ final class WorkspaceManager {
 
     func moveToTrash(_ chosenURL: URL) {
         let url = chosenURL.standardizedFileURL
-        guard WorkspaceTreeNode.editableExtensions.contains(url.pathExtension.lowercased()),
+        let isDirectory =
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        let isEditableFile =
+            WorkspaceTreeNode.editableExtensions.contains(url.pathExtension.lowercased())
+        guard (isDirectory || isEditableFile),
               isInsideWorkspace(url),
+              url != rootURL?.standardizedFileURL,
               FileManager.default.fileExists(atPath: url.path) else {
             return
         }
 
-        if currentFileURL?.standardizedFileURL == url {
+        if let currentFileURL,
+           isSameOrDescendant(currentFileURL, of: url) {
             NotificationCenter.default.post(name: .flushEditorBuffer, object: nil)
             guard saveCurrentFileIfNeeded() else { return }
         }
@@ -433,8 +439,16 @@ final class WorkspaceManager {
                     self.setError("Clearly couldn’t move “\(url.lastPathComponent)” to Trash.")
                     return
                 }
-                if self.currentFileURL?.standardizedFileURL == url {
+                if let currentFileURL = self.currentFileURL,
+                   self.isSameOrDescendant(currentFileURL, of: url) {
                     self.clearCurrentFile()
+                }
+                if let newFolderParentURL = self.newFolderParentURL,
+                   self.isSameOrDescendant(newFolderParentURL, of: url) {
+                    self.newFolderParentURL = nil
+                }
+                if isDirectory {
+                    self.removeExpandedFolderPaths(inside: url)
                 }
                 self.refreshTree()
             } catch {
@@ -590,6 +604,20 @@ final class WorkspaceManager {
         let rootPath = rootURL.standardizedFileURL.path
         let path = url.standardizedFileURL.path
         return path == rootPath || path.hasPrefix(rootPath + "/")
+    }
+
+    private func isSameOrDescendant(_ url: URL, of ancestorURL: URL) -> Bool {
+        let ancestorPath = ancestorURL.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path == ancestorPath || path.hasPrefix(ancestorPath + "/")
+    }
+
+    private func removeExpandedFolderPaths(inside folderURL: URL) {
+        let folderPath = folderURL.standardizedFileURL.path
+        expandedFolderPaths = Set(expandedFolderPaths.filter {
+            $0 != folderPath && !$0.hasPrefix(folderPath + "/")
+        })
+        UserDefaults.standard.set(Array(expandedFolderPaths), forKey: Self.expandedPathsKey)
     }
 
     private func clearCurrentFileIfDeleted() {
