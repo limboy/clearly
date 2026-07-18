@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="website/icon.png" width="128" height="128" alt="Clearly icon" />
+  <img src="assets/icon.png" width="128" height="128" alt="Clearly icon" />
 </p>
 
 <h1 align="center">Clearly</h1>
