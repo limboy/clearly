@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-07-18
+- Open recent files and workspaces directly from the File > Open Recent menu
+
 ## [3.4.0] - 2026-07-18
 - Create, rename, and move files and folders to Trash directly within the workspace sidebar
 - Workspace sidebar maintains selection and position when managing files
