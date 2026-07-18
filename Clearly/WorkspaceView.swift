@@ -27,13 +27,7 @@ extension FocusedValues {
     }
 }
 
-private struct WorkspaceNewFolderScrollTarget: Hashable {
-    let parentURL: URL
 
-    init(parentURL: URL) {
-        self.parentURL = parentURL.standardizedFileURL
-    }
-}
 
 /// A macOS workspace window: a persistent folder tree on the left and
 /// Clearly's existing editor/preview surface on the right.
@@ -138,10 +132,7 @@ private struct WorkspaceSidebar: View {
                             }
                         )
                     }
-                    if let rootURL = workspace.rootURL,
-                       workspace.isCreatingNewFolder(in: rootURL) {
-                        WorkspaceNewFolderRow(parentURL: rootURL, workspace: workspace)
-                    }
+
                 } header: {
                     HStack(spacing: 6) {
                         Text(workspace.workspaceName)
@@ -171,7 +162,6 @@ private struct WorkspaceSidebar: View {
             }
             .onKeyPress(.return) {
                 guard workspace.renamingURL == nil,
-                      workspace.newFolderParentURL == nil,
                       let selectedFileURL,
                       workspace.beginRenaming(selectedFileURL) else {
                     return .ignored
@@ -228,9 +218,12 @@ private struct WorkspaceSidebar: View {
                 guard let pendingScrollURL else { return }
                 requestScroll(to: pendingScrollURL, using: proxy)
             }
-            .onChange(of: workspace.newFolderParentURL) { _, parentURL in
-                guard let parentURL else { return }
-                requestNewFolderScroll(in: parentURL, using: proxy)
+            .onChange(of: workspace.selectedTreeURL) { _, newURL in
+                guard let newURL else { return }
+                if selectedFileURL?.standardizedFileURL != newURL.standardizedFileURL {
+                    selectedFileURL = newURL
+                }
+                requestScroll(to: newURL, using: proxy)
             }
         }
     }
@@ -253,14 +246,7 @@ private struct WorkspaceSidebar: View {
         }
     }
 
-    private func requestNewFolderScroll(in parentURL: URL, using proxy: ScrollViewProxy) {
-        let target = WorkspaceNewFolderScrollTarget(parentURL: parentURL)
-        DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.2)) {
-                proxy.scrollTo(target, anchor: .center)
-            }
-        }
-    }
+
 }
 
 private struct WorkspaceSidebarNode: View {
@@ -270,7 +256,7 @@ private struct WorkspaceSidebarNode: View {
 
     var body: some View {
         if node.isDirectory {
-            if node.displayChildren != nil || workspace.isCreatingNewFolder(in: node.url) {
+            if node.displayChildren != nil {
                 DisclosureGroup(isExpanded: expandedBinding) {
                     ForEach(node.children ?? []) { child in
                         WorkspaceSidebarNode(
@@ -278,9 +264,6 @@ private struct WorkspaceSidebarNode: View {
                             workspace: workspace,
                             onRenamed: onRenamed
                         )
-                    }
-                    if workspace.isCreatingNewFolder(in: node.url) {
-                        WorkspaceNewFolderRow(parentURL: node.url, workspace: workspace)
                     }
                 } label: {
                     nodeLabel
@@ -443,57 +426,6 @@ private struct WorkspaceRenameRow: View {
     }
 }
 
-private struct WorkspaceNewFolderRow: View {
-    let parentURL: URL
-    @Bindable var workspace: WorkspaceManager
-    @State private var name = "untitled folder"
-    @FocusState private var isNameFieldFocused: Bool
-
-    var body: some View {
-        Label {
-            TextField("Folder name", text: $name)
-                .textFieldStyle(.plain)
-                .font(Theme.Typography.sidebarRow)
-                .focused($isNameFieldFocused)
-                .onSubmit {
-                    submit()
-                }
-                .onExitCommand {
-                    workspace.cancelCreatingNewFolder(in: parentURL)
-                }
-                .onChange(of: isNameFieldFocused) { wasFocused, isFocused in
-                    if wasFocused && !isFocused {
-                        submit()
-                    }
-                }
-        } icon: {
-            Image(systemName: "folder.fill")
-                .foregroundStyle(Theme.accentColorSwiftUI)
-        }
-        .frame(minHeight: 20)
-        .id(WorkspaceNewFolderScrollTarget(parentURL: parentURL))
-        .onAppear {
-            DispatchQueue.main.async {
-                isNameFieldFocused = true
-            }
-        }
-        .onChange(of: workspace.errorMessage) { previousError, error in
-            guard previousError != nil,
-                  error == nil,
-                  workspace.isCreatingNewFolder(in: parentURL) else {
-                return
-            }
-            DispatchQueue.main.async {
-                isNameFieldFocused = true
-            }
-        }
-    }
-
-    private func submit() {
-        guard workspace.isCreatingNewFolder(in: parentURL) else { return }
-        _ = workspace.createNewFolder(named: name, in: parentURL)
-    }
-}
 
 private struct WorkspaceSidebarLabel: View {
     let node: WorkspaceTreeNode

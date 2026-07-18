@@ -68,7 +68,6 @@ final class WorkspaceManager {
     private(set) var isLoadingTree = false
     private(set) var errorMessage: String?
     private(set) var expandedFolderPaths: Set<String>
-    private(set) var newFolderParentURL: URL?
     private(set) var renamingURL: URL?
     var selectedTreeURL: URL?
 
@@ -235,7 +234,6 @@ final class WorkspaceManager {
         currentText = ""
         lastSavedText = ""
         tree = []
-        newFolderParentURL = nil
         renamingURL = nil
         selectedTreeURL = nil
         isReplacingDocument = false
@@ -357,52 +355,19 @@ final class WorkspaceManager {
             return
         }
 
-        setFolderExpanded(true, for: targetFolder)
-        newFolderParentURL = targetFolder
-    }
-
-    func isCreatingNewFolder(in folder: URL) -> Bool {
-        newFolderParentURL?.standardizedFileURL == folder.standardizedFileURL
-    }
-
-    @discardableResult
-    func createNewFolder(named proposedName: String, in folder: URL) -> Bool {
-        let targetFolder = folder.standardizedFileURL
-        guard isCreatingNewFolder(in: targetFolder),
-              isInsideWorkspace(targetFolder) else {
-            return false
-        }
-
-        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
-            setError("That folder name isn’t valid.")
-            return false
-        }
-
-        let newFolder = targetFolder.appendingPathComponent(name, isDirectory: true)
-        guard !FileManager.default.fileExists(atPath: newFolder.path) else {
-            setError("A file or folder named “\(name)” already exists.")
-            return false
-        }
-
+        let newFolderURL = nextUntitledFolderURL(in: targetFolder)
         do {
             try FileManager.default.createDirectory(
-                at: newFolder,
+                at: newFolderURL,
                 withIntermediateDirectories: false
             )
-            newFolderParentURL = nil
             setFolderExpanded(true, for: targetFolder)
+            selectedTreeURL = newFolderURL
+            renamingURL = newFolderURL
             refreshTree()
-            return true
         } catch {
-            setError("Clearly couldn’t create “\(name)”.", error)
-            return false
+            setError("Clearly couldn’t create a folder in “\(targetFolder.lastPathComponent)”.", error)
         }
-    }
-
-    func cancelCreatingNewFolder(in folder: URL) {
-        guard isCreatingNewFolder(in: folder) else { return }
-        newFolderParentURL = nil
     }
 
     // MARK: - Renaming workspace items
@@ -414,8 +379,7 @@ final class WorkspaceManager {
             (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         let isEditableFile =
             WorkspaceTreeNode.editableExtensions.contains(url.pathExtension.lowercased())
-        guard newFolderParentURL == nil,
-              renamingURL == nil,
+        guard renamingURL == nil,
               (isDirectory || isEditableFile),
               isInsideWorkspace(url),
               url != rootURL?.standardizedFileURL,
@@ -512,6 +476,18 @@ final class WorkspaceManager {
         }
     }
 
+    private func nextUntitledFolderURL(in folder: URL) -> URL {
+        var number = 1
+        while true {
+            let name = number == 1 ? "untitled folder" : "untitled folder \(number)"
+            let candidate = folder.appendingPathComponent(name, isDirectory: true)
+            if !FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            number += 1
+        }
+    }
+
     func moveToTrash(_ chosenURL: URL) {
         let url = chosenURL.standardizedFileURL
         let isDirectory =
@@ -542,10 +518,6 @@ final class WorkspaceManager {
                 if let currentFileURL = self.currentFileURL,
                    self.isSameOrDescendant(currentFileURL, of: url) {
                     self.clearCurrentFile()
-                }
-                if let newFolderParentURL = self.newFolderParentURL,
-                   self.isSameOrDescendant(newFolderParentURL, of: url) {
-                    self.newFolderParentURL = nil
                 }
                 if let renamingURL = self.renamingURL,
                    self.isSameOrDescendant(renamingURL, of: url) {
