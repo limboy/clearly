@@ -118,6 +118,7 @@ private struct WorkspaceSidebar: View {
         Binding(
             get: { selectedFileURL },
             set: { newURL in
+                pendingManualSelectionURL = newURL?.standardizedFileURL
                 selectedFileURL = newURL
                 workspace.selectedTreeURL = newURL?.standardizedFileURL
             }
@@ -186,10 +187,8 @@ private struct WorkspaceSidebar: View {
                     return
                 }
                 if (try? newURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                    pendingManualSelectionURL = nil
                     return
                 }
-                pendingManualSelectionURL = newURL.standardizedFileURL
                 DispatchQueue.main.async {
                     if !workspace.openFile(at: newURL) {
                         pendingManualSelectionURL = nil
@@ -226,10 +225,16 @@ private struct WorkspaceSidebar: View {
             }
             .onChange(of: workspace.selectedTreeURL) { _, newURL in
                 guard let newURL else { return }
+                let wasSelectedManually = newURL.standardizedFileURL == pendingManualSelectionURL
                 if selectedFileURL?.standardizedFileURL != newURL.standardizedFileURL {
                     selectedFileURL = newURL
                 }
-                requestScroll(to: newURL, using: proxy)
+                if !wasSelectedManually {
+                    requestScroll(to: newURL, using: proxy)
+                }
+                if (try? newURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                    pendingManualSelectionURL = nil
+                }
             }
         }
     }
