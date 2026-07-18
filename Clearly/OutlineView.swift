@@ -3,7 +3,7 @@ import SwiftUI
 import ClearlyCore
 
 struct OutlineView: View {
-    static let width: CGFloat = 240
+    static var width: CGFloat { OutlineState.defaultWidth }
 
     @ObservedObject var outlineState: OutlineState
     var isEditorVisible: Bool
@@ -60,7 +60,68 @@ struct OutlineView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.outlinePanelBackgroundSwiftUI)
-        .background(OutlineTitlebarReservation(width: Self.width))
+        .background(OutlineTitlebarReservation(width: outlineState.width))
+        .overlay(alignment: .leading) {
+            OutlineResizeHandle(outlineState: outlineState)
+        }
+        .frame(width: outlineState.width)
+    }
+}
+
+private struct OutlineResizeHandle: View {
+    @ObservedObject var outlineState: OutlineState
+    @State private var dragStartWidth: CGFloat? = nil
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+            .frame(width: 1)
+            .frame(maxHeight: .infinity)
+            .overlay {
+                Color.clear
+                    .frame(width: 8)
+                    .contentShape(Rectangle())
+                    .overlay(ResizeCursorView())
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { value in
+                                if dragStartWidth == nil {
+                                    dragStartWidth = outlineState.width
+                                }
+                                if let startWidth = dragStartWidth {
+                                    let newWidth = startWidth - value.translation.width
+                                    outlineState.width = max(OutlineState.minWidth, min(OutlineState.maxWidth, newWidth))
+                                }
+                            }
+                            .onEnded { _ in
+                                dragStartWidth = nil
+                            }
+                    )
+                    .onTapGesture(count: 2) {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            outlineState.width = OutlineState.defaultWidth
+                        }
+                    }
+            }
+    }
+}
+
+private struct ResizeCursorView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        ResizeCursorNSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.discardCursorRects()
+        nsView.addCursorRect(nsView.bounds, cursor: .resizeLeftRight)
+    }
+}
+
+private final class ResizeCursorNSView: NSView {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .resizeLeftRight)
     }
 }
 
@@ -142,9 +203,13 @@ private struct OutlineTitlebarReservation: NSViewRepresentable {
     }
 
     private func attach(from view: NSView, coordinator: Coordinator) {
-        DispatchQueue.main.async { [weak view] in
-            guard let window = view?.window else { return }
+        if let window = view.window {
             coordinator.attach(to: window, width: width)
+        } else {
+            DispatchQueue.main.async { [weak view] in
+                guard let window = view?.window else { return }
+                coordinator.attach(to: window, width: width)
+            }
         }
     }
 }

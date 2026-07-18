@@ -16,8 +16,22 @@ public struct HeadingItem: Identifiable, Hashable {
 }
 
 public final class OutlineState: ObservableObject {
+    public static let minWidth: CGFloat = 200
+    public static let defaultWidth: CGFloat = 240
+    public static let maxWidth: CGFloat = 400
+
     @Published public var isVisible: Bool {
         didSet { UserDefaults.standard.set(isVisible, forKey: "outlineVisible") }
+    }
+    @Published public var width: CGFloat {
+        didSet {
+            let clamped = max(Self.minWidth, min(Self.maxWidth, width))
+            if clamped != width {
+                width = clamped
+            } else {
+                UserDefaults.standard.set(Double(width), forKey: "outlineWidth")
+            }
+        }
     }
     @Published public var headings: [HeadingItem] = []
 
@@ -47,6 +61,9 @@ public final class OutlineState: ObservableObject {
 
     public init() {
         self.isVisible = UserDefaults.standard.bool(forKey: "outlineVisible")
+        let storedWidth = UserDefaults.standard.double(forKey: "outlineWidth")
+        let initialWidth = storedWidth > 0 ? CGFloat(storedWidth) : Self.defaultWidth
+        self.width = max(Self.minWidth, min(Self.maxWidth, initialWidth))
     }
 
     public func toggle() {
