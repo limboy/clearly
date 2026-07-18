@@ -83,7 +83,7 @@ final class WorkspaceManager {
     }
 
     var currentFileName: String {
-        currentFileURL?.lastPathComponent ?? "Workspace"
+        currentFileURL?.lastPathComponent ?? workspaceName
     }
 
     var hasVisibleWindow: Bool {
