@@ -47,39 +47,45 @@ struct WorkspaceView: View {
     var body: some View {
         @Bindable var workspace = workspace
 
-        HStack(spacing: 0) {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                WorkspaceSidebar(workspace: workspace)
-                    .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 360)
-                    .toolbar(removing: .sidebarToggle)
-            } detail: {
-                if workspace.currentFileURL != nil {
-                    ContentView(
-                        text: $workspace.currentText,
-                        fileURL: workspace.currentFileURL,
-                        outlineState: outlineState,
-                        embedsOutline: false,
-                        minimumContentWidth: 400,
-                        viewMode: $currentViewMode,
-                        onViewModeChange: { currentViewMode = $0 }
-                    )
-                } else {
-                    WorkspaceEmptyDetail(workspace: workspace)
+        Group {
+            if workspace.rootURL == nil {
+                WorkspaceEmptyDetail(workspace: workspace)
+            } else {
+                HStack(spacing: 0) {
+                    NavigationSplitView(columnVisibility: $columnVisibility) {
+                        WorkspaceSidebar(workspace: workspace)
+                            .navigationSplitViewColumnWidth(min: 210, ideal: 260, max: 360)
+                            .toolbar(removing: .sidebarToggle)
+                    } detail: {
+                        if workspace.currentFileURL != nil {
+                            ContentView(
+                                text: $workspace.currentText,
+                                fileURL: workspace.currentFileURL,
+                                outlineState: outlineState,
+                                embedsOutline: false,
+                                minimumContentWidth: 400,
+                                viewMode: $currentViewMode,
+                                onViewModeChange: { currentViewMode = $0 }
+                            )
+                        } else {
+                            WorkspaceEmptyDetail(workspace: workspace)
+                        }
+                    }
+                    .navigationTitle(workspace.currentFileName)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if outlineState.isVisible {
+                        OutlineView(
+                            outlineState: outlineState,
+                            isEditorVisible: currentViewMode == .edit
+                        )
+                        .frame(width: outlineState.width)
+                        .ignoresSafeArea(.container, edges: .top)
+                    }
                 }
             }
-            .navigationTitle(workspace.currentFileName)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if outlineState.isVisible {
-                OutlineView(
-                    outlineState: outlineState,
-                    isEditorVisible: currentViewMode == .edit
-                )
-                .frame(width: outlineState.width)
-                .ignoresSafeArea(.container, edges: .top)
-            }
         }
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: workspace.rootURL == nil ? 520 : 760, minHeight: workspace.rootURL == nil ? 400 : 520)
         .background(WorkspaceWindowObserver(
             workspace: workspace,
             currentViewMode: $currentViewMode,
@@ -603,6 +609,7 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
     var recentFileURLs: [URL]
     var onOpenNewWindow: ((URL) -> Void)?
 
+    @MainActor
     final class Holder: NSObject, NSToolbarDelegate, NSToolbarItemValidation {
         private static let newFileItemIdentifier = NSToolbarItem.Identifier(
             "com.sabotage.clearly.workspace.newFile"
@@ -668,6 +675,12 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
         }
 
         private func installToolbarIfNeeded(in window: NSWindow) {
+            if workspace?.rootURL == nil {
+                if window.toolbar != nil {
+                    window.toolbar = nil
+                }
+                return
+            }
             guard window.toolbar !== toolbar else {
                 toolbar.validateVisibleItems()
                 return
@@ -677,7 +690,11 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
         }
 
         func validateToolbar() {
-            toolbar.validateVisibleItems()
+            if let window {
+                installToolbarIfNeeded(in: window)
+            } else {
+                toolbar.validateVisibleItems()
+            }
         }
 
         func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
