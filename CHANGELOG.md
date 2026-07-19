@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-07-19
+- Pin button and hover effects added to the Scratchpad panel title bar
+
 ## [3.5.0] - 2026-07-18
 - Resizable Outline panel lets you drag to adjust its width
 - Mode switch and outline buttons are now located in the top bar
