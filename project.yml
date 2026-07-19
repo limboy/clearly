@@ -67,7 +67,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        DEVELOPMENT_TEAM: W33JZPPPFN
+        DEVELOPMENT_TEAM: 5P9ZHW7578
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
@@ -111,7 +111,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: ClearlyQuickLook/ClearlyQuickLook.entitlements
         INFOPLIST_FILE: ClearlyQuickLook/Info.plist
-        DEVELOPMENT_TEAM: W33JZPPPFN
+        DEVELOPMENT_TEAM: 5P9ZHW7578
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook

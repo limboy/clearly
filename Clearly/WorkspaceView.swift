@@ -37,6 +37,8 @@ struct WorkspaceView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @StateObject private var outlineState = OutlineState()
     @State private var currentViewMode: ViewMode = .edit
+    @State private var searchController = SpotlightSearchController()
+    @State private var recentFileURLs: [URL] = []
 
     init(folderURL: URL? = nil) {
         _workspace = State(initialValue: WorkspaceManager(folderURL: folderURL))
@@ -81,10 +83,47 @@ struct WorkspaceView: View {
         .background(WorkspaceWindowObserver(
             workspace: workspace,
             currentViewMode: $currentViewMode,
-            outlineState: outlineState
+            outlineState: outlineState,
+            searchController: searchController,
+            recentFileURLs: recentFileURLs,
+            onOpenNewWindow: { url in
+                openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+            }
         ))
         .focusedSceneValue(\.workspaceManager, workspace)
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .background {
+            Group {
+                Button("") {
+                    searchController.present(
+                        workspace: workspace,
+                        recentFileURLs: recentFileURLs,
+                        onOpenNewWindow: { url in
+                            openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+                        }
+                    )
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+
+                Button("") {
+                    searchController.present(
+                        workspace: workspace,
+                        recentFileURLs: recentFileURLs,
+                        onOpenNewWindow: { url in
+                            openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+                        }
+                    )
+                }
+                .keyboardShortcut("p", modifiers: [.command])
+            }
+            .hidden()
+        }
+        .onChange(of: workspace.currentFileURL) { _, newURL in
+            guard let newURL else { return }
+            var updated = recentFileURLs.filter { $0.standardizedFileURL != newURL.standardizedFileURL }
+            updated.insert(newURL.standardizedFileURL, at: 0)
+            recentFileURLs = Array(updated.prefix(10))
+        }
         .alert(
             "Workspace Error",
             isPresented: Binding(
@@ -155,7 +194,7 @@ private struct WorkspaceSidebar: View {
 
                         if workspace.isLoadingTree {
                             ProgressView()
-                                .controlSize(.small)
+                               .controlSize(.small)
                         }
                     }
                     .textCase(nil)
@@ -560,10 +599,16 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
     let workspace: WorkspaceManager
     @Binding var currentViewMode: ViewMode
     @ObservedObject var outlineState: OutlineState
+    let searchController: SpotlightSearchController
+    var recentFileURLs: [URL]
+    var onOpenNewWindow: ((URL) -> Void)?
 
     final class Holder: NSObject, NSToolbarDelegate, NSToolbarItemValidation {
         private static let newFileItemIdentifier = NSToolbarItem.Identifier(
             "com.sabotage.clearly.workspace.newFile"
+        )
+        private static let searchItemIdentifier = NSToolbarItem.Identifier(
+            "com.sabotage.clearly.workspace.search"
         )
         private static let modeItemIdentifier = NSToolbarItem.Identifier(
             "com.sabotage.clearly.workspace.mode"
@@ -576,6 +621,9 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
         weak var workspace: WorkspaceManager?
         var currentViewModeBinding: Binding<ViewMode>?
         var outlineState: OutlineState?
+        var searchController: SpotlightSearchController?
+        var recentFileURLs: [URL] = []
+        var onOpenNewWindow: ((URL) -> Void)?
         private let toolbar = NSToolbar(
             identifier: NSToolbar.Identifier("workspace.\(UUID().uuidString)")
         )
@@ -628,9 +676,14 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
             window.toolbarStyle = .unified
         }
 
+        func validateToolbar() {
+            toolbar.validateVisibleItems()
+        }
+
         func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
             [
                 .toggleSidebar,
+                Self.searchItemIdentifier,
                 Self.newFileItemIdentifier,
                 .sidebarTrackingSeparator,
                 .flexibleSpace,
@@ -659,6 +712,22 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
                 )
                 item.target = self
                 item.action = #selector(createNewFile(_:))
+                item.isBordered = true
+                item.visibilityPriority = .high
+                return item
+            }
+
+            if itemIdentifier == Self.searchItemIdentifier {
+                let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+                item.label = "Search"
+                item.paletteLabel = "Search Workspace"
+                item.toolTip = "Search Workspace (⌘P / ⇧⌘F)"
+                item.image = NSImage(
+                    systemSymbolName: "magnifyingglass",
+                    accessibilityDescription: "Search Workspace"
+                )
+                item.target = self
+                item.action = #selector(openSearch(_:))
                 item.isBordered = true
                 item.visibilityPriority = .high
                 return item
@@ -703,8 +772,8 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
         }
 
         func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-            if item.itemIdentifier == Self.newFileItemIdentifier {
-                return workspace?.rootURL != nil
+            if item.itemIdentifier == Self.newFileItemIdentifier || item.itemIdentifier == Self.searchItemIdentifier {
+                return true
             }
             if item.itemIdentifier == Self.modeItemIdentifier {
                 let isEdit = currentViewModeBinding?.wrappedValue == .edit
@@ -726,6 +795,16 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
             workspace?.createNewFile()
         }
 
+        @MainActor @objc private func openSearch(_ sender: NSToolbarItem) {
+            guard let window, let workspace else { return }
+            searchController?.present(
+                over: window,
+                workspace: workspace,
+                recentFileURLs: recentFileURLs,
+                onOpenNewWindow: onOpenNewWindow
+            )
+        }
+
         @MainActor @objc private func toggleViewMode(_ sender: NSToolbarItem) {
             guard let binding = currentViewModeBinding else { return }
             binding.wrappedValue = (binding.wrappedValue == .edit ? .preview : .edit)
@@ -743,6 +822,10 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
         let view = NSView()
         context.coordinator.currentViewModeBinding = $currentViewMode
         context.coordinator.outlineState = outlineState
+        context.coordinator.searchController = searchController
+        context.coordinator.recentFileURLs = recentFileURLs
+        context.coordinator.onOpenNewWindow = onOpenNewWindow
+        context.coordinator.validateToolbar()
         register(from: view, context: context)
         return view
     }
@@ -750,6 +833,10 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.currentViewModeBinding = $currentViewMode
         context.coordinator.outlineState = outlineState
+        context.coordinator.searchController = searchController
+        context.coordinator.recentFileURLs = recentFileURLs
+        context.coordinator.onOpenNewWindow = onOpenNewWindow
+        context.coordinator.validateToolbar()
         register(from: nsView, context: context)
     }
 
@@ -758,6 +845,7 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
               let workspace = coordinator.workspace else {
             return
         }
+        coordinator.searchController?.unregister(parentWindow: window)
         workspace.unregisterWindow(window)
     }
 
@@ -765,6 +853,7 @@ struct WorkspaceWindowObserver: NSViewRepresentable {
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
             context.coordinator.installToolbar(in: window)
+            context.coordinator.searchController?.register(parentWindow: window)
             workspace.registerWindow(window)
         }
     }

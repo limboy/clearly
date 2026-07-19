@@ -151,6 +151,13 @@ struct EditorView: NSViewRepresentable {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleJumpToLineNotification(_:)),
+            name: .jumpToLineInEditor,
+            object: nil
+        )
+
         // Frame changes (window resize causing rewrap) — trigger gutter redraw
         textView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -467,6 +474,11 @@ struct EditorView: NSViewRepresentable {
             guard foundRange.location != NSNotFound else { return }
             textView.scrollRangeToVisible(foundRange)
             textView.showFindIndicator(for: foundRange)
+        }
+
+        @objc func handleJumpToLineNotification(_ notification: Notification) {
+            guard let line = notification.userInfo?["line"] as? Int else { return }
+            jumpToLine(line)
         }
 
         @objc func flushEditorBuffer(_ notification: Notification) {

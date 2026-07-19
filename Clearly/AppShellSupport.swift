@@ -9,6 +9,7 @@ extension Notification.Name {
     static let flushEditorBuffer = Notification.Name("ClearlyFlushEditorBuffer")
     static let highlightTextInEditor = Notification.Name("ClearlyHighlightTextInEditor")
     static let highlightTextInPreview = Notification.Name("ClearlyHighlightTextInPreview")
+    static let jumpToLineInEditor = Notification.Name("ClearlyJumpToLineInEditor")
 }
 
 /// Holds a weak reference to the currently focused `ClearlyTextView`.
