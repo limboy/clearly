@@ -16,6 +16,8 @@ final class SpotlightSearchController {
     private var hostingView: NSHostingView<SpotlightSearchView>?
     private var resizeObserver: NSObjectProtocol?
     private var closeObserver: NSObjectProtocol?
+    private var escapeMonitor: Any?
+    private var focusToken = UUID()
 
     func register(parentWindow: NSWindow) {
         self.parentWindow = parentWindow
@@ -36,10 +38,7 @@ final class SpotlightSearchController {
         let targetWindow = window ?? parentWindow
         guard let targetWindow else { return }
 
-        if let panel {
-            panel.makeKeyAndOrderFront(nil)
-            return
-        }
+        focusToken = UUID()
 
         let presentationBinding = Binding(
             get: { [weak self] in self?.panel != nil },
@@ -53,8 +52,17 @@ final class SpotlightSearchController {
             workspace: workspace,
             isPresented: presentationBinding,
             recentFileURLs: recentFileURLs,
-            onOpenNewWindow: onOpenNewWindow
+            onOpenNewWindow: onOpenNewWindow,
+            focusToken: focusToken
         )
+
+        if let panel {
+            hostingView?.rootView = searchView
+            panel.makeKeyAndOrderFront(nil)
+            addEscapeMonitor()
+            return
+        }
+
         let panel = SpotlightSearchPanel(
             contentRect: targetWindow.frame,
             styleMask: [.borderless],
@@ -77,12 +85,14 @@ final class SpotlightSearchController {
         self.panel = panel
         self.hostingView = hostingView
         observe(targetWindow)
+        addEscapeMonitor()
 
         targetWindow.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
     }
 
     func dismiss(restoreParentFocus: Bool = true) {
+        removeEscapeMonitor()
         guard let panel else { return }
         let parent = panel.parent
         parent?.removeChildWindow(panel)
@@ -94,6 +104,25 @@ final class SpotlightSearchController {
 
         if restoreParentFocus, parent?.isVisible == true {
             parent?.makeKey()
+        }
+    }
+
+    private func addEscapeMonitor() {
+        removeEscapeMonitor()
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let panel = self.panel, panel.isKeyWindow else { return event }
+            if event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}" {
+                self.dismiss()
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+            self.escapeMonitor = nil
         }
     }
 
@@ -138,6 +167,7 @@ struct SpotlightSearchView: View {
     @Binding var isPresented: Bool
     var recentFileURLs: [URL] = []
     var onOpenNewWindow: ((URL) -> Void)?
+    var focusToken: UUID = UUID()
 
     @State private var query: String = ""
     @State private var selectedScope: WorkspaceSearchScope = .all
@@ -177,15 +207,31 @@ struct SpotlightSearchView: View {
                     dismiss()
                 }
         }
+        .onKeyPress(.escape) {
+            dismiss()
+            return .handled
+        }
         .onAppear {
-            isFieldFocused = true
+            requestFieldFocus()
             performSearch(query: query, scope: selectedScope)
+        }
+        .onChange(of: focusToken) { _, _ in
+            requestFieldFocus()
         }
         .onChange(of: query) { _, newQuery in
             performSearch(query: newQuery, scope: selectedScope)
         }
         .onChange(of: selectedScope) { _, newScope in
             performSearch(query: query, scope: newScope)
+        }
+    }
+
+    private func requestFieldFocus() {
+        DispatchQueue.main.async {
+            isFieldFocused = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            isFieldFocused = true
         }
     }
 
