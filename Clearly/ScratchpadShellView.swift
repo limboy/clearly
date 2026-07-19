@@ -72,6 +72,8 @@ struct ScratchpadShellView: View {
 struct ScratchpadTitleMenuButton: View {
     @Environment(ScratchpadManager.self) private var manager
     @Environment(ScratchpadStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
     var body: some View {
         @Bindable var bindable = manager
@@ -88,10 +90,21 @@ struct ScratchpadTitleMenuButton: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 3)
+            .background(
+                isHovered
+                    ? Theme.hoverColor(inDark: colorScheme == .dark)
+                    : Color.clear,
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Motion.hover) {
+                isHovered = hovering
+            }
+        }
         .help("Browse scratchpads (⌘P)")
         .popover(isPresented: $bindable.historyPopoverShown, arrowEdge: .bottom) {
             ScratchpadHistoryPicker {
@@ -107,19 +120,64 @@ struct ScratchpadTitleMenuButton: View {
     }
 }
 
+struct ScratchpadPinButton: View {
+    @Environment(ScratchpadManager.self) private var manager
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            manager.togglePinned()
+        } label: {
+            Image(systemName: manager.isPinned ? "pin.fill" : "pin")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(manager.isPinned ? Color.accentColor : Color.primary)
+                .frame(width: 26, height: 22, alignment: .center)
+                .background(
+                    isHovered
+                        ? Theme.hoverColor(inDark: colorScheme == .dark)
+                        : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Motion.hover) {
+                isHovered = hovering
+            }
+        }
+        .help(manager.isPinned ? "Unpin Window" : "Pin Window")
+    }
+}
+
 struct ScratchpadNewNoteButton: View {
     @Environment(ScratchpadManager.self) private var manager
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
     var body: some View {
         Button {
             manager.createAndShowNew()
         } label: {
             Image(systemName: "square.and.pencil")
-                .font(.system(size: 14, weight: .regular))
-                .frame(width: 28, height: 22)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.primary)
+                .frame(width: 26, height: 22, alignment: .center)
+                .background(
+                    isHovered
+                        ? Theme.hoverColor(inDark: colorScheme == .dark)
+                        : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Motion.hover) {
+                isHovered = hovering
+            }
+        }
         .help("New Scratchpad (⌘N)")
     }
 }
@@ -132,11 +190,12 @@ struct ScratchpadTitlebarBar: View {
             ScratchpadTitleMenuButton()
                 .padding(.horizontal, 72)
 
-            HStack(spacing: 0) {
+            HStack(spacing: 2) {
                 Spacer(minLength: 0)
+                ScratchpadPinButton()
                 ScratchpadNewNoteButton()
-                    .padding(.trailing, 12)
             }
+            .padding(.trailing, 10)
         }
     }
 }

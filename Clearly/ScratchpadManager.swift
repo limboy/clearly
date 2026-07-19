@@ -17,6 +17,12 @@ final class ScratchpadManager {
     private(set) var currentNoteID: ScratchpadNote.ID?
     var deleteUndo = ScratchpadDeleteUndoController()
     var historyPopoverShown: Bool = false
+    var isPinned: Bool = UserDefaults.standard.object(forKey: "scratchpadIsPinned") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(isPinned, forKey: "scratchpadIsPinned")
+            window?.level = isPinned ? .floating : .normal
+        }
+    }
 
     private let store = ScratchpadStore.shared
     private var window: ScratchpadPanel?
@@ -39,6 +45,10 @@ final class ScratchpadManager {
                 self.runRetentionSweep()
             }
         }
+    }
+
+    func togglePinned() {
+        isPinned.toggle()
     }
 
     // MARK: - Window lifecycle
@@ -172,8 +182,8 @@ final class ScratchpadManager {
         )
         win.contentViewController = controller
         win.title = " "
-        win.level = .floating
-        win.isFloatingPanel = true
+        win.level = isPinned ? .floating : .normal
+        win.isFloatingPanel = isPinned
         win.becomesKeyOnlyIfNeeded = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.isReleasedWhenClosed = false
