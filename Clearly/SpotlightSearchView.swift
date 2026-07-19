@@ -275,9 +275,6 @@ struct SpotlightSearchView: View {
             } else if results.isEmpty && !isSearching {
                 VStack(spacing: 6) {
                     Spacer()
-                    Image(systemName: "magnifyingglass.circle")
-                        .font(.system(size: 32))
-                        .foregroundColor(.secondary.opacity(0.6))
                     Text("No results found for \"\(query)\"")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.primary)
