@@ -20,6 +20,19 @@ private final class DraggableWKWebView: WKWebView {
     }
 }
 
+/// Keeps preview invalidation O(1) when SwiftUI reuses the same String
+/// storage. Hashing the entire markdown on every update made unrelated view
+/// changes scale with document size.
+private struct PreviewContentKey: Equatable {
+    let markdown: String
+    let fontSize: CGFloat
+    let fontFamily: String
+    let usesDarkAppearance: Bool
+    let fileURLFragment: String
+    let contentWidthEm: CGFloat?
+    let hidesFrontmatter: Bool
+}
+
 struct PreviewView: NSViewRepresentable {
     let markdown: String
     var fontSize: CGFloat = CGFloat(FontPreferences.defaultSize)
@@ -41,8 +54,16 @@ struct PreviewView: NSViewRepresentable {
         return "calc(\(Int(contentWidthEm))em + 128px)"
     }
 
-    private var contentKey: String {
-        "\(markdown.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
+    private var contentKey: PreviewContentKey {
+        PreviewContentKey(
+            markdown: markdown,
+            fontSize: fontSize,
+            fontFamily: fontFamily,
+            usesDarkAppearance: colorScheme == .dark,
+            fileURLFragment: LocalImageSupport.fileURLKeyFragment(fileURL),
+            contentWidthEm: contentWidthEm,
+            hidesFrontmatter: hideFrontmatterInPreview
+        )
     }
 
     func makeCoordinator() -> Coordinator {
@@ -63,6 +84,7 @@ struct PreviewView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
         webView.alphaValue = 0 // hidden until content loads
+        webView.isHidden = mode != .preview
         context.coordinator.fileURL = fileURL
         context.coordinator.positionSyncID = positionSyncID
         context.coordinator.findState = findState
@@ -94,7 +116,9 @@ struct PreviewView: NSViewRepresentable {
             object: nil
         )
 
-        loadHTML(in: webView, context: context)
+        if mode == .preview {
+            loadHTML(in: webView, context: context)
+        }
         return webView
     }
 
@@ -322,7 +346,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var lastContentKey: String?
+        fileprivate var lastContentKey: PreviewContentKey?
         var lastMode: ViewMode?
         var scrollFraction: Double = 0
         var didInitialLoad = false

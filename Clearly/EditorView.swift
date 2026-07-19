@@ -17,7 +17,6 @@ struct EditorView: NSViewRepresentable {
     var extraBottomInset: CGFloat = 0
     var showLineNumbers: Bool = false
     var jumpToLineState: JumpToLineState?
-    var statusBarState: StatusBarState?
     var needsTrafficLightClearance: Bool = false
     var contentWidthEm: CGFloat? = nil
     @Environment(\.colorScheme) private var colorScheme
@@ -55,7 +54,11 @@ struct EditorView: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
-        TextCheckingPreferences.apply(to: textView)
+        // Enabling spell/grammar checking before assigning a large document
+        // lets AppKit start scanning it on the window-creation path.
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
 
         // Font
         textView.font = Theme.editorFont
@@ -104,6 +107,10 @@ struct EditorView: NSViewRepresentable {
         textView.string = text
         textView.delegate = context.coordinator
         scrollView.documentView = textView
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak textView] in
+            guard let textView else { return }
+            TextCheckingPreferences.apply(to: textView)
+        }
 
         // Line number gutter (plain NSView, not NSRulerView)
         let gutter = LineNumberGutterView()
@@ -270,6 +277,7 @@ struct EditorView: NSViewRepresentable {
                 context.coordinator.performFind()
             }
         }
+        let becameVisible = mode == .edit && context.coordinator.lastMode != .edit
         context.coordinator.lastMode = mode
 
         context.coordinator.updateCount += 1
@@ -309,10 +317,13 @@ struct EditorView: NSViewRepresentable {
                 .baselineOffset: Theme.editorBaselineOffset
             ]
 
-            // Suppress scroll handler during highlighting to prevent layout manager deadlock
-            context.coordinator.isHighlightingInProgress = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "appearance")
-            context.coordinator.isHighlightingInProgress = false
+            if mode == .edit && count > 1 && !didChangeDocument {
+                context.coordinator.highlightAllNow(caller: "appearance")
+            } else {
+                // Initial/document-switch highlighting is cosmetic and can
+                // wait until the editor has painted a usable first frame.
+                context.coordinator.needsFullHighlight = true
+            }
 
             // Refresh ruler when appearance/font changes
             context.coordinator.gutterView?.appearanceDidChange()
@@ -342,9 +353,7 @@ struct EditorView: NSViewRepresentable {
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges
-            context.coordinator.isHighlightingInProgress = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
-            context.coordinator.isHighlightingInProgress = false
+            context.coordinator.needsFullHighlight = true
             // External text replacement (file load/revert) — old match ranges are stale.
             context.coordinator.clearFindHighlights()
             if let findState = context.coordinator.findState, findState.isVisible, findState.activeMode == .edit {
@@ -360,6 +369,10 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isUpdating = false
         } else if context.coordinator.isUpdating && count <= 5 {
             DiagnosticLog.log("updateNSView #\(count): skipped text check (isUpdating)")
+        }
+
+        if mode == .edit && (becameVisible || context.coordinator.needsFullHighlight) {
+            context.coordinator.scheduleFullHighlight(caller: didChangeDocument ? "documentOpen" : "becameVisible")
         }
 
         if count <= 5 || count % 100 == 0 {
@@ -396,6 +409,7 @@ struct EditorView: NSViewRepresentable {
         var pendingBindingUpdates = 0
         var pendingBindingUpdateToken: UUID?
         private var pendingFullHighlightWork: DispatchWorkItem?
+        var needsFullHighlight = true
 
         // Find state tracking
         var matchRanges: [NSRange] = []
@@ -448,7 +462,6 @@ struct EditorView: NSViewRepresentable {
                 SelectionBridge.setSelection(nil, for: parent.positionSyncID)
             }
 
-            parent.statusBarState?.updateSelection(range, in: textView.string)
         }
 
         @objc func handleHighlightText(_ notification: Notification) {
@@ -546,6 +559,42 @@ struct EditorView: NSViewRepresentable {
             pendingBindingUpdateToken = nil
         }
 
+        func highlightAllNow(caller: String) {
+            guard let textView else { return }
+            pendingFullHighlightWork?.cancel()
+            pendingFullHighlightWork = nil
+            needsFullHighlight = false
+            isHighlightingInProgress = true
+            highlighter?.highlightAll(textView.textStorage!, caller: caller)
+            isHighlightingInProgress = false
+            invalidateVisibleRegion(of: textView)
+        }
+
+        /// Full-document highlighting can be substantial for large notes, but
+        /// it is purely decorative. Give AppKit a chance to display the plain
+        /// editor first, then apply attributes in one batched pass.
+        func scheduleFullHighlight(caller: String, delay: TimeInterval = 0.08) {
+            guard textView != nil else { return }
+            pendingFullHighlightWork?.cancel()
+            needsFullHighlight = false
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, let textView = self.textView else { return }
+                self.pendingFullHighlightWork = nil
+                let scrollView = textView.enclosingScrollView
+                let savedOrigin = scrollView?.contentView.bounds.origin
+                self.isHighlightingInProgress = true
+                self.highlighter?.highlightAll(textView.textStorage!, caller: caller)
+                self.isHighlightingInProgress = false
+                if let scrollView, let savedOrigin {
+                    scrollView.contentView.scroll(to: savedOrigin)
+                    scrollView.reflectScrolledClipView(scrollView.contentView)
+                }
+                self.invalidateVisibleRegion(of: textView)
+            }
+            pendingFullHighlightWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+
         func observeFindState(_ state: FindState) {
             findCancellables.removeAll()
 
@@ -636,22 +685,7 @@ struct EditorView: NSViewRepresentable {
             // doesn't block typing. The paragraph was already highlighted above.
             if highlighter?.needsFullHighlight == true {
                 highlighter?.needsFullHighlight = false
-                pendingFullHighlightWork?.cancel()
-                let work = DispatchWorkItem { [weak self] in
-                    guard let self, let textView = self.textView else { return }
-                    let sv = textView.enclosingScrollView
-                    let origin = sv?.contentView.bounds.origin
-                    self.isHighlightingInProgress = true
-                    self.highlighter?.highlightAll(textView.textStorage!, caller: "deferred-blockDelim")
-                    self.isHighlightingInProgress = false
-                    if let sv, let origin {
-                        sv.contentView.scroll(to: origin)
-                        sv.reflectScrolledClipView(sv.contentView)
-                    }
-                    self.invalidateVisibleRegion(of: textView)
-                }
-                pendingFullHighlightWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+                scheduleFullHighlight(caller: "deferred-blockDelim", delay: 0.3)
             }
 
             // Restore scroll position that highlighting may have disturbed

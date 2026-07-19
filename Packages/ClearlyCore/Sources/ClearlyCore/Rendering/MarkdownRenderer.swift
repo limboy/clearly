@@ -5,6 +5,17 @@ public enum MarkdownRenderer {
     private static let escapedMathBackslashToken = "\u{E100}"
     private static let escapedMathDollarToken = "\u{E101}"
     private static let escapedMathPaddingToken = "\u{E102}"
+    private static let protectedCodeTokenRegex = try! NSRegularExpression(
+        pattern: #"__CLEARLY_PROTECTED_CODE_(\d+)__"#
+    )
+    private static let htmlTagRegex = try! NSRegularExpression(pattern: #"<[^>]+>"#)
+    private static let displayMathRegex = try! NSRegularExpression(
+        pattern: MathSupport.displayMathPattern,
+        options: .dotMatchesLineSeparators
+    )
+    private static let inlineMathRegex = try! NSRegularExpression(
+        pattern: MathSupport.inlineMathPattern
+    )
 
     public static func renderHTML(_ markdown: String, includeFrontmatter: Bool = true) -> String {
         guard !markdown.isEmpty else { return "" }
@@ -29,12 +40,7 @@ public enum MarkdownRenderer {
         } else {
             return ""
         }
-        html = processMath(html)
-        html = restoreEscapedMathDelimiters(in: html)
-        html = processWikilinks(html)
-        html = processHighlightMarks(html)
-        html = processSuperSub(html)
-        html = processEmoji(html)
+        html = processInlineSyntax(html)
         html = processCallouts(html)
         html = processTOC(html)
         html = processCaptions(html)
@@ -138,53 +144,61 @@ public enum MarkdownRenderer {
 
     /// Convert $...$ and $$...$$ in rendered HTML to KaTeX-compatible spans/divs.
     /// Only transforms text nodes outside protected <code>/<pre> regions.
-    private static func processMath(_ html: String) -> String {
+    private static func processInlineSyntax(_ html: String) -> String {
+        // Every inline extension shares the same protected code regions.
+        // Protecting/restoring separately for each extension multiplied the
+        // cost of rendering code-heavy files.
         let (protectedHTML, protectedSegments) = protectCodeRegions(in: html)
-        guard let tagRegex = try? NSRegularExpression(pattern: #"<[^>]+>"#) else {
-            return restoreProtectedSegments(in: processMathText(protectedHTML), segments: protectedSegments)
-        }
+        var result = processMath(protectedHTML)
+        result = processWikilinks(result)
+        result = processHighlightMarks(result)
+        result = processSuperSub(result)
+        result = processEmoji(result)
+        result = restoreProtectedSegments(in: result, segments: protectedSegments)
+        result = restoreEscapedMathDelimiters(in: result)
+        return result.replacingOccurrences(of: WikilinkSupport.pipeToken, with: "|")
+    }
+
+    private static func processMath(_ html: String) -> String {
+        guard html.contains("$") else { return html }
 
         var result = ""
         var lastLocation = 0
-        let fullRange = NSRange(protectedHTML.startIndex..., in: protectedHTML)
+        let fullRange = NSRange(html.startIndex..., in: html)
 
-        for match in tagRegex.matches(in: protectedHTML, range: fullRange) {
+        for match in htmlTagRegex.matches(in: html, range: fullRange) {
             let textRange = NSRange(location: lastLocation, length: match.range.location - lastLocation)
-            if let range = Range(textRange, in: protectedHTML) {
-                result += processMathText(String(protectedHTML[range]))
+            if let range = Range(textRange, in: html) {
+                result += processMathText(String(html[range]))
             }
-            if let range = Range(match.range, in: protectedHTML) {
-                result += protectedHTML[range]
+            if let range = Range(match.range, in: html) {
+                result += html[range]
             }
             lastLocation = match.range.location + match.range.length
         }
 
         if lastLocation < fullRange.length {
             let tailRange = NSRange(location: lastLocation, length: fullRange.length - lastLocation)
-            if let range = Range(tailRange, in: protectedHTML) {
-                result += processMathText(String(protectedHTML[range]))
+            if let range = Range(tailRange, in: html) {
+                result += processMathText(String(html[range]))
             }
         }
 
-        return restoreProtectedSegments(in: result, segments: protectedSegments)
+        return result
     }
 
     private static func processMathText(_ text: String) -> String {
         var result = text
-        if let blockRegex = try? NSRegularExpression(pattern: MathSupport.displayMathPattern, options: .dotMatchesLineSeparators) {
-            result = blockRegex.stringByReplacingMatches(
-                in: result,
-                range: NSRange(result.startIndex..., in: result),
-                withTemplate: #"<div class="math-block">$1</div>"#
-            )
-        }
-        if let inlineRegex = try? NSRegularExpression(pattern: MathSupport.inlineMathPattern) {
-            result = inlineRegex.stringByReplacingMatches(
-                in: result,
-                range: NSRange(result.startIndex..., in: result),
-                withTemplate: #"<span class="math-inline">$1</span>"#
-            )
-        }
+        result = displayMathRegex.stringByReplacingMatches(
+            in: result,
+            range: NSRange(result.startIndex..., in: result),
+            withTemplate: #"<div class="math-block">$1</div>"#
+        )
+        result = inlineMathRegex.stringByReplacingMatches(
+            in: result,
+            range: NSRange(result.startIndex..., in: result),
+            withTemplate: #"<span class="math-inline">$1</span>"#
+        )
         return result
     }
 
@@ -196,28 +210,68 @@ public enum MarkdownRenderer {
             return (html, [])
         }
 
-        var protectedHTML = html
-        var segments: [String] = []
-        let matches = codeRegex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
+        let nsHTML = html as NSString
+        let matches = codeRegex.matches(
+            in: html,
+            range: NSRange(location: 0, length: nsHTML.length)
+        )
+        guard !matches.isEmpty else { return (html, []) }
 
+        // Build the protected representation in one forward pass. Replacing
+        // each match in a Swift String made this O(codeBlocks × HTML length),
+        // which turned ordinary 100 KB notes with many code fences into
+        // multi-second preview renders.
+        var protectedHTML = ""
+        protectedHTML.reserveCapacity(html.utf8.count)
+        var segments: [String] = []
+        segments.reserveCapacity(matches.count)
+        var cursor = 0
         for match in matches {
-            guard let range = Range(match.range, in: protectedHTML) else { continue }
-            let segment = String(protectedHTML[range])
+            let prefixRange = NSRange(
+                location: cursor,
+                length: match.range.location - cursor
+            )
+            protectedHTML += nsHTML.substring(with: prefixRange)
+            let segment = nsHTML.substring(with: match.range)
             let token = "__CLEARLY_PROTECTED_CODE_\(segments.count)__"
             segments.append(segment)
-            protectedHTML.replaceSubrange(range, with: token)
+            protectedHTML += token
+            cursor = NSMaxRange(match.range)
+        }
+        if cursor < nsHTML.length {
+            protectedHTML += nsHTML.substring(from: cursor)
         }
 
         return (protectedHTML, segments)
     }
 
     private static func restoreProtectedSegments(in html: String, segments: [String]) -> String {
-        var restored = html
-        for (index, segment) in segments.enumerated() {
-            restored = restored.replacingOccurrences(
-                of: "__CLEARLY_PROTECTED_CODE_\(index)__",
-                with: segment
-            )
+        guard !segments.isEmpty else { return html }
+        let nsHTML = html as NSString
+        let matches = protectedCodeTokenRegex.matches(
+            in: html,
+            range: NSRange(location: 0, length: nsHTML.length)
+        )
+        guard !matches.isEmpty else { return html }
+
+        var restored = ""
+        restored.reserveCapacity(html.utf8.count)
+        var cursor = 0
+        for match in matches {
+            restored += nsHTML.substring(with: NSRange(
+                location: cursor,
+                length: match.range.location - cursor
+            ))
+            let indexText = nsHTML.substring(with: match.range(at: 1))
+            if let index = Int(indexText), segments.indices.contains(index) {
+                restored += segments[index]
+            } else {
+                restored += nsHTML.substring(with: match.range)
+            }
+            cursor = NSMaxRange(match.range)
+        }
+        if cursor < nsHTML.length {
+            restored += nsHTML.substring(from: cursor)
         }
         return restored
     }
@@ -394,15 +448,13 @@ public enum MarkdownRenderer {
         if !html.contains("[[") && !hasToken {
             return html
         }
-        let (protectedHTML, segments) = protectCodeRegions(in: html)
         guard let regex = try? NSRegularExpression(pattern: WikilinkSupport.renderPattern) else {
-            let restored = protectedHTML.replacingOccurrences(of: WikilinkSupport.pipeToken, with: "|")
-            return restoreProtectedSegments(in: restored, segments: segments)
+            return html
         }
-        let ns = protectedHTML as NSString
+        let ns = html as NSString
         var result = ""
         var cursor = 0
-        for match in regex.matches(in: protectedHTML, range: NSRange(location: 0, length: ns.length)) {
+        for match in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
             result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
             let target = ns.substring(with: match.range(at: 1))
             let heading: String? = {
@@ -432,11 +484,7 @@ public enum MarkdownRenderer {
             cursor = match.range.location + match.range.length
         }
         result += ns.substring(from: cursor)
-        // Restore code regions first so the defensive token cleanup catches any
-        // pipe-tokens that leaked into protected segments (e.g. multi-backtick
-        // inline code that the line-scanner's naive backtick toggle missed).
-        let restored = restoreProtectedSegments(in: result, segments: segments)
-        return restored.replacingOccurrences(of: WikilinkSupport.pipeToken, with: "|")
+        return result
     }
 
     private static func wikilinkAttrEscape(_ s: String) -> String {
@@ -449,24 +497,23 @@ public enum MarkdownRenderer {
     // MARK: - Highlight/Mark ==text==
 
     private static func processHighlightMarks(_ html: String) -> String {
-        let (protectedHTML, segments) = protectCodeRegions(in: html)
+        guard html.contains("==") else { return html }
         guard let regex = try? NSRegularExpression(pattern: #"==([^=\n]+?)=="#) else {
-            return restoreProtectedSegments(in: protectedHTML, segments: segments)
+            return html
         }
-        let ns = protectedHTML as NSString
-        let result = regex.stringByReplacingMatches(
-            in: protectedHTML,
+        let ns = html as NSString
+        return regex.stringByReplacingMatches(
+            in: html,
             range: NSRange(location: 0, length: ns.length),
             withTemplate: "<mark>$1</mark>"
         )
-        return restoreProtectedSegments(in: result, segments: segments)
     }
 
     // MARK: - Superscript/Subscript
 
     private static func processSuperSub(_ html: String) -> String {
-        let (protectedHTML, segments) = protectCodeRegions(in: html)
-        var result = protectedHTML
+        guard html.contains("^") || html.contains("~") else { return html }
+        var result = html
         // Superscript: ^text^ (not ^^)
         if let supRegex = try? NSRegularExpression(pattern: #"(?<!\^)\^(?!\^)([^\^\s\n]+?)(?<!\^)\^(?!\^)"#) {
             let ns = result as NSString
@@ -485,41 +532,41 @@ public enum MarkdownRenderer {
                 withTemplate: "<sub>$1</sub>"
             )
         }
-        return restoreProtectedSegments(in: result, segments: segments)
+        return result
     }
 
     // MARK: - Emoji Shortcodes
 
     private static func processEmoji(_ html: String) -> String {
-        let (protectedHTML, segments) = protectCodeRegions(in: html)
+        guard html.contains(":") else { return html }
         guard let tagRegex = try? NSRegularExpression(pattern: #"<[^>]+>"#),
               let emojiRegex = try? NSRegularExpression(pattern: #":([a-z0-9_+-]+):"#) else {
-            return restoreProtectedSegments(in: protectedHTML, segments: segments)
+            return html
         }
 
         var result = ""
         var lastLocation = 0
-        let fullRange = NSRange(protectedHTML.startIndex..., in: protectedHTML)
+        let fullRange = NSRange(html.startIndex..., in: html)
 
-        for match in tagRegex.matches(in: protectedHTML, range: fullRange) {
+        for match in tagRegex.matches(in: html, range: fullRange) {
             let textRange = NSRange(location: lastLocation, length: match.range.location - lastLocation)
-            if let range = Range(textRange, in: protectedHTML) {
-                result += replacingEmojiShortcodes(in: String(protectedHTML[range]), regex: emojiRegex)
+            if let range = Range(textRange, in: html) {
+                result += replacingEmojiShortcodes(in: String(html[range]), regex: emojiRegex)
             }
-            if let range = Range(match.range, in: protectedHTML) {
-                result += protectedHTML[range]
+            if let range = Range(match.range, in: html) {
+                result += html[range]
             }
             lastLocation = match.range.location + match.range.length
         }
 
         if lastLocation < fullRange.length {
             let tailRange = NSRange(location: lastLocation, length: fullRange.length - lastLocation)
-            if let range = Range(tailRange, in: protectedHTML) {
-                result += replacingEmojiShortcodes(in: String(protectedHTML[range]), regex: emojiRegex)
+            if let range = Range(tailRange, in: html) {
+                result += replacingEmojiShortcodes(in: String(html[range]), regex: emojiRegex)
             }
         }
 
-        return restoreProtectedSegments(in: result, segments: segments)
+        return result
     }
 
     private static func replacingEmojiShortcodes(in text: String, regex: NSRegularExpression) -> String {

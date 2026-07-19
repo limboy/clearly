@@ -17,7 +17,7 @@ struct ContentView: View {
     @StateObject private var outlineState: OutlineState
     @StateObject private var findState = FindState()
     @StateObject private var jumpToLineState = JumpToLineState()
-    @StateObject private var statusBarState = StatusBarState()
+    @State private var hasCreatedPreview: Bool
 
     @AppStorage(FontPreferences.sizeKey) private var fontSize = FontPreferences.defaultSize
     @AppStorage(FontPreferences.familyKey) private var fontFamily = FontPreferences.defaultFamily.rawValue
@@ -48,9 +48,13 @@ struct ContentView: View {
         // and no obvious way to edit.
         let raw = UserDefaults.standard.string(forKey: "defaultViewMode") ?? "edit"
         let preferred = ViewMode(rawValue: raw) ?? .edit
-        let isBlank = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Avoid allocating a trimmed copy of the entire document just to
+        // decide whether Preview would be empty. Nonblank documents normally
+        // exit this scan on their first character.
+        let isBlank = text.wrappedValue.allSatisfy(\.isWhitespace)
         let initialMode: ViewMode = (preferred == .preview && isBlank) ? .edit : preferred
         self._internalViewMode = State(initialValue: initialMode)
+        self._hasCreatedPreview = State(initialValue: initialMode == .preview)
     }
 
     private var currentViewModeBinding: Binding<ViewMode> {
@@ -106,19 +110,23 @@ struct ContentView: View {
         .focusedSceneValue(\.exportPDFAction) { exportPDF() }
         .focusedSceneValue(\.printDocumentAction) { printDocument() }
         .onAppear {
+            if viewMode == .preview {
+                hasCreatedPreview = true
+            }
             outlineState.parseHeadings(from: text)
-            statusBarState.updateText(text)
             onViewModeChange?(viewMode)
             if let fileURL {
                 NSDocumentController.shared.noteNewRecentDocumentURL(fileURL)
             }
         }
         .onChange(of: viewMode) { _, newMode in
+            if newMode == .preview {
+                hasCreatedPreview = true
+            }
             onViewModeChange?(newMode)
         }
         .onChange(of: text) { _, newText in
             outlineState.parseHeadings(from: newText)
-            statusBarState.updateText(newText)
         }
         .onChange(of: fileURL) { _, newURL in
             // Re-key bridges when the document is saved/renamed so a new
@@ -159,28 +167,32 @@ struct ContentView: View {
                 extraBottomInset: 0,
                 showLineNumbers: showLineNumbers,
                 jumpToLineState: jumpToLineState,
-                statusBarState: statusBarState,
                 contentWidthEm: contentWidthEm
             )
             .opacity(viewMode == .edit ? 1 : 0)
             .allowsHitTesting(viewMode == .edit)
 
-            PreviewView(
-                markdown: text,
-                fontSize: CGFloat(fontSize),
-                fontFamily: fontFamily,
-                mode: viewMode,
-                positionSyncID: positionSyncID,
-                fileURL: fileURL,
-                findState: findState,
-                outlineState: outlineState,
-                onTaskToggle: { line, checked in
-                    toggleTask(line: line, checked: checked)
-                },
-                contentWidthEm: contentWidthEm
-            )
-            .opacity(viewMode == .preview ? 1 : 0)
-            .allowsHitTesting(viewMode == .preview)
+            // WKWebView startup and Markdown-to-HTML rendering are expensive.
+            // Do not create either for edit-only windows; after Preview is
+            // visited once, retain it so switching modes stays instant.
+            if hasCreatedPreview || viewMode == .preview {
+                PreviewView(
+                    markdown: text,
+                    fontSize: CGFloat(fontSize),
+                    fontFamily: fontFamily,
+                    mode: viewMode,
+                    positionSyncID: positionSyncID,
+                    fileURL: fileURL,
+                    findState: findState,
+                    outlineState: outlineState,
+                    onTaskToggle: { line, checked in
+                        toggleTask(line: line, checked: checked)
+                    },
+                    contentWidthEm: contentWidthEm
+                )
+                .opacity(viewMode == .preview ? 1 : 0)
+                .allowsHitTesting(viewMode == .preview)
+            }
         }
     }
 

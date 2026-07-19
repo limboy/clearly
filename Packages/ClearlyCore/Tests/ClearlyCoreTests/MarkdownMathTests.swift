@@ -102,4 +102,21 @@ final class MarkdownMathTests: XCTestCase {
         )
         XCTAssertFalse(html.contains("math-inline"), html)
     }
+
+    func testInlineExtensionsShareCodeProtection() {
+        let html = MarkdownRenderer.renderHTML(
+            """
+            `==mark== ^sup^ ~sub~ :rocket: $x$`
+
+            ==mark== ^sup^ ~sub~ :rocket: $x$
+            """
+        )
+
+        XCTAssertTrue(html.contains("<code>==mark== ^sup^ ~sub~ :rocket: $x$</code>"), html)
+        XCTAssertTrue(html.contains("<mark>mark</mark>"), html)
+        XCTAssertTrue(html.contains("<sup>sup</sup>"), html)
+        XCTAssertTrue(html.contains("<sub>sub</sub>"), html)
+        XCTAssertTrue(html.contains("🚀"), html)
+        XCTAssertTrue(html.contains(#"<span class="math-inline">x</span>"#), html)
+    }
 }
