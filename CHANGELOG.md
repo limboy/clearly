@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-07-19
+- Add workspace search and line navigation
+- Improve editor and preview startup performance
+- Refine workspace search panel keyboard interactions and empty state
+
 ## [3.5.1] - 2026-07-19
 - Pin button and hover effects added to the Scratchpad panel title bar
 
