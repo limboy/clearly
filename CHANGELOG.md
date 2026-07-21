@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-07-21
+- Drag folders onto the Clearly app icon or Dock icon to open them as workspaces
+- Restores all open workspace windows across app restarts
+
+
 ## [3.6.0] - 2026-07-19
 - Add workspace search and line navigation
 - Improve editor and preview startup performance
