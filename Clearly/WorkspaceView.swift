@@ -7,11 +7,22 @@ enum WorkspaceScene {
 
     struct Value: Codable, Hashable {
         let id: UUID
-        let folderURL: URL?
+        var folderURL: URL?
+        /// Keeps this individual restored window authorized for its folder.
+        var folderBookmarkData: Data?
 
         init(folderURL: URL?) {
             id = UUID()
             self.folderURL = folderURL
+            // Keep the original Powerbox / Open Recent URL intact. The
+            // manager creates the bookmark after it has verified access.
+            folderBookmarkData = nil
+        }
+
+        init(folderBookmarkData: Data) {
+            id = UUID()
+            folderURL = nil
+            self.folderBookmarkData = folderBookmarkData
         }
     }
 }
@@ -33,15 +44,24 @@ extension FocusedValues {
 /// Clearly's existing editor/preview surface on the right.
 struct WorkspaceView: View {
     @Environment(\.openWindow) private var openWindow
+    @Binding private var sceneValue: WorkspaceScene.Value
     @State private var workspace: WorkspaceManager
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @StateObject private var outlineState = OutlineState()
     @State private var currentViewMode: ViewMode = .edit
     @State private var searchController = SpotlightSearchController()
     @State private var recentFileURLs: [URL] = []
+    private let usesFallbackWorkspaceRestoration: Bool
 
-    init(folderURL: URL? = nil) {
-        _workspace = State(initialValue: WorkspaceManager(folderURL: folderURL))
+    init(sceneValue: Binding<WorkspaceScene.Value>) {
+        _sceneValue = sceneValue
+        let value = sceneValue.wrappedValue
+        usesFallbackWorkspaceRestoration = value.folderURL == nil
+            && value.folderBookmarkData == nil
+        _workspace = State(initialValue: WorkspaceManager(
+            folderURL: value.folderURL,
+            bookmarkData: value.folderBookmarkData
+        ))
     }
 
     var body: some View {
@@ -148,13 +168,40 @@ struct WorkspaceView: View {
             Text(workspace.errorMessage ?? "")
         }
         .onAppear {
+            syncSceneValue()
+            ClearlyAppDelegate.shared?.restoreAdditionalWorkspaceWindowsIfNeeded(
+                usesFallback: usesFallbackWorkspaceRestoration,
+                openWindow: { [openWindow] bookmarkData in
+                    openWindow(
+                        id: WorkspaceScene.id,
+                        value: WorkspaceScene.Value(folderBookmarkData: bookmarkData)
+                    )
+                }
+            )
             ClearlyAppDelegate.shared?.openWorkspaceWindowClosure = { [openWindow] url in
                 openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
             }
         }
+        .onChange(of: workspace.rootURL) { _, _ in
+            syncSceneValue()
+        }
         .onDisappear {
             _ = workspace.prepareForWindowClose()
         }
+    }
+
+    private func syncSceneValue() {
+        let rootURL = workspace.rootURL
+        let bookmarkData = workspace.restorationBookmarkData
+        guard sceneValue.folderURL != rootURL
+                || sceneValue.folderBookmarkData != bookmarkData else {
+            return
+        }
+
+        var updatedValue = sceneValue
+        updatedValue.folderURL = rootURL
+        updatedValue.folderBookmarkData = bookmarkData
+        sceneValue = updatedValue
     }
 }
 

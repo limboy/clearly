@@ -19,6 +19,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     private var isOpeningSettingsFromMenuBar = false
     private var observers: [Any] = []
     private var localEventMonitors: [Any] = []
+    private var didCoordinateWorkspaceRestoration = false
 
     /// Set when a termination request must actually exit, either from the
     /// menubar "Quit Clearly" item or Sparkle's install-and-relaunch flow.
@@ -155,12 +156,16 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         guard WorkspaceManager.prepareAllForTermination() else {
             return .terminateCancel
         }
-        if allowFullQuit { return .terminateNow }
+        if allowFullQuit {
+            WorkspaceManager.beginAppTermination()
+            return .terminateNow
+        }
         guard keepRunningMenubarOnly else {
             // menubar-off: a launcher / open panel may have dismissed and
             // SwiftUI may be in the middle of creating the chosen document.
             // Defer the actual quit until either it shows up or 3s lapses.
             if scheduleDeferredQuitIfPanelInFlight() { return .terminateCancel }
+            WorkspaceManager.beginAppTermination()
             return .terminateNow
         }
 
@@ -271,6 +276,19 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             NSApp.setActivationPolicy(.regular)
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func restoreAdditionalWorkspaceWindowsIfNeeded(
+        usesFallback: Bool,
+        openWindow: (Data) -> Void
+    ) {
+        guard !didCoordinateWorkspaceRestoration else { return }
+        didCoordinateWorkspaceRestoration = true
+        guard usesFallback else { return }
+
+        for bookmarkData in WorkspaceManager.additionalWorkspaceBookmarksForLaunch {
+            openWindow(bookmarkData)
+        }
     }
 
     private func hasDocumentWindows() -> Bool {
@@ -618,7 +636,7 @@ struct ClearlyApp: App {
             id: WorkspaceScene.id,
             for: WorkspaceScene.Value.self
         ) { value in
-            WorkspaceView(folderURL: value.wrappedValue.folderURL)
+            WorkspaceView(sceneValue: value)
                 .preferredColorScheme(resolvedColorScheme)
         } defaultValue: {
             WorkspaceScene.Value(folderURL: nil)

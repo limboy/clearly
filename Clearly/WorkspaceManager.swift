@@ -22,6 +22,7 @@ final class WorkspaceManager {
 
     private static var managerReferences: [WeakReference] = []
     private static weak var activeManager: WorkspaceManager?
+    private static var isTerminating = false
 
     static var active: WorkspaceManager? {
         if let activeManager, activeManager.hasVisibleWindow {
@@ -55,6 +56,24 @@ final class WorkspaceManager {
         for manager in liveManagers {
             manager.workspaceWindow?.performClose(nil)
         }
+    }
+
+    static func persistOpenWorkspacesForRestoration() {
+        guard !isTerminating else { return }
+        let bookmarks = liveManagers.compactMap { manager -> Data? in
+            guard manager.workspaceWindow != nil else { return nil }
+            return manager.restorationBookmarkData
+        }
+        UserDefaults.standard.set(bookmarks, forKey: sessionBookmarksKey)
+    }
+
+    static func beginAppTermination() {
+        persistOpenWorkspacesForRestoration()
+        isTerminating = true
+    }
+
+    static var additionalWorkspaceBookmarksForLaunch: ArraySlice<Data> {
+        launchRestorationBookmarks.dropFirst()
     }
 
     private static var liveManagers: [WorkspaceManager] {
@@ -99,16 +118,29 @@ final class WorkspaceManager {
     @ObservationIgnored private var eventStream: FSEventStreamRef?
     @ObservationIgnored private var scopedURL: URL?
     @ObservationIgnored private weak var workspaceWindow: NSWindow?
+    @ObservationIgnored private(set) var restorationBookmarkData: Data?
 
     private static let bookmarkKey = "workspaceFolderBookmark"
+    private static let sessionBookmarksKey = "workspaceSessionFolderBookmarks"
     private static let expandedPathsKey = "workspaceExpandedFolderPaths"
     private static let autoSaveDelay: TimeInterval = 0.45
+    private static let launchRestorationBookmarks: [Data] = {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: sessionBookmarksKey) != nil {
+            return defaults.array(forKey: sessionBookmarksKey) as? [Data] ?? []
+        }
+        return defaults.data(forKey: bookmarkKey).map { [$0] } ?? []
+    }()
 
-    init(folderURL: URL? = nil) {
+    init(folderURL: URL? = nil, bookmarkData: Data? = nil) {
         expandedFolderPaths = Set(
             UserDefaults.standard.stringArray(forKey: Self.expandedPathsKey) ?? []
         )
-        if let folderURL {
+        if let bookmarkData {
+            if !restoreWorkspace(from: bookmarkData), let folderURL {
+                _ = attachWorkspace(at: folderURL)
+            }
+        } else if let folderURL {
             _ = attachWorkspace(at: folderURL)
         } else {
             restoreWorkspace()
@@ -180,18 +212,25 @@ final class WorkspaceManager {
         stopMonitoring()
         scopedURL?.stopAccessingSecurityScopedResource()
         scopedURL = url
+        restorationBookmarkData = bookmarkData
 
         UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
         replaceWorkspaceRoot(with: url)
+        Self.persistOpenWorkspacesForRestoration()
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         return true
     }
 
     private func restoreWorkspace() {
-        guard let bookmarkData = UserDefaults.standard.data(forKey: Self.bookmarkKey) else {
+        guard let bookmarkData = Self.launchRestorationBookmarks.first else {
             return
         }
 
+        _ = restoreWorkspace(from: bookmarkData)
+    }
+
+    @discardableResult
+    private func restoreWorkspace(from bookmarkData: Data) -> Bool {
         do {
             var isStale = false
             let url = try URL(
@@ -202,23 +241,35 @@ final class WorkspaceManager {
             ).standardizedFileURL
 
             guard url.startAccessingSecurityScopedResource() else {
-                UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-                return
+                removeLastWorkspaceBookmarkIfMatching(bookmarkData)
+                return false
             }
 
             scopedURL = url
+            restorationBookmarkData = bookmarkData
             if isStale,
                let refreshed = try? url.bookmarkData(
                    options: .withSecurityScope,
                    includingResourceValuesForKeys: nil,
                    relativeTo: nil
                ) {
-                UserDefaults.standard.set(refreshed, forKey: Self.bookmarkKey)
+                restorationBookmarkData = refreshed
+                if UserDefaults.standard.data(forKey: Self.bookmarkKey) == bookmarkData {
+                    UserDefaults.standard.set(refreshed, forKey: Self.bookmarkKey)
+                }
             }
             replaceWorkspaceRoot(with: url)
+            return true
         } catch {
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            removeLastWorkspaceBookmarkIfMatching(bookmarkData)
             DiagnosticLog.log("Workspace restore failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func removeLastWorkspaceBookmarkIfMatching(_ bookmarkData: Data) {
+        if UserDefaults.standard.data(forKey: Self.bookmarkKey) == bookmarkData {
+            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
         }
     }
 
@@ -619,6 +670,7 @@ final class WorkspaceManager {
     func registerWindow(_ window: NSWindow) {
         workspaceWindow = window
         Self.activeManager = self
+        Self.persistOpenWorkspacesForRestoration()
     }
 
     func unregisterWindow(_ window: NSWindow) {
@@ -627,6 +679,7 @@ final class WorkspaceManager {
             if Self.activeManager === self {
                 Self.activeManager = Self.liveManagers.last(where: \.hasVisibleWindow)
             }
+            Self.persistOpenWorkspacesForRestoration()
         }
     }
 
