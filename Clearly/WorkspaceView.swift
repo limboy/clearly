@@ -24,6 +24,39 @@ enum WorkspaceScene {
             folderURL = nil
             self.folderBookmarkData = folderBookmarkData
         }
+
+        var canonicalPath: String? {
+            if let folderURL {
+                return folderURL.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
+            }
+            if let folderBookmarkData {
+                var isStale = false
+                if let url = try? URL(
+                    resolvingBookmarkData: folderBookmarkData,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    return url.resolvingSymlinksInPath().standardizedFileURL.path.lowercased()
+                }
+            }
+            return nil
+        }
+
+        static func == (lhs: Value, rhs: Value) -> Bool {
+            if let leftPath = lhs.canonicalPath, let rightPath = rhs.canonicalPath {
+                return leftPath == rightPath
+            }
+            return lhs.id == rhs.id
+        }
+
+        func hash(into hasher: inout Hasher) {
+            if let canonicalPath {
+                hasher.combine(canonicalPath)
+            } else {
+                hasher.combine(id)
+            }
+        }
     }
 }
 
@@ -179,7 +212,11 @@ struct WorkspaceView: View {
                 }
             )
             ClearlyAppDelegate.shared?.openWorkspaceWindowClosure = { [openWindow] url in
-                openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+                if let existing = WorkspaceManager.manager(for: url) {
+                    existing.makeKeyAndOrderFront()
+                } else {
+                    openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+                }
             }
         }
         .onChange(of: workspace.rootURL) { _, _ in
@@ -957,7 +994,11 @@ struct WorkspaceCommands: Commands {
     private func openFileOrWorkspace() {
         ClearlyAppDelegate.shared?.ensureRegularAndActivate()
         ClearlyAppDelegate.shared?.openWorkspaceWindowClosure = { [openWindow] url in
-            openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+            if let existing = WorkspaceManager.manager(for: url) {
+                existing.makeKeyAndOrderFront()
+            } else {
+                openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
+            }
         }
 
         let panel = NSOpenPanel()
@@ -973,15 +1014,7 @@ struct WorkspaceCommands: Commands {
 
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         if isDirectory {
-            if let activeWorkspace, activeWorkspace.rootURL == nil {
-                _ = activeWorkspace.attachWorkspace(at: url)
-            } else {
-                openWindow(
-                    id: WorkspaceScene.id,
-                    value: WorkspaceScene.Value(folderURL: url)
-                )
-                NSDocumentController.shared.noteNewRecentDocumentURL(url)
-            }
+            ClearlyAppDelegate.shared?.openURL(url)
             return
         }
 

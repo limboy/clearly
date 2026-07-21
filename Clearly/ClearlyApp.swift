@@ -13,7 +13,31 @@ import Sparkle
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static private(set) weak var shared: ClearlyAppDelegate?
 
-    var openWorkspaceWindowClosure: ((URL) -> Void)?
+    private var pendingOpenWorkspaceURL: URL?
+    private(set) var hasConsumedLaunchURL = false
+
+    /// True while `openURL` is creating a workspace window for a dropped
+    /// folder.  `WorkspaceManager.registerWindow` uses this to detect and
+    /// close spurious empty default windows that SwiftUI creates alongside
+    /// the intended folder window.
+    var isOpeningDirectoryViaExternalDrop = false
+
+    var openWorkspaceWindowClosure: ((URL) -> Void)? {
+        didSet {
+            if let pendingURL = pendingOpenWorkspaceURL, let closure = openWorkspaceWindowClosure {
+                pendingOpenWorkspaceURL = nil
+                hasConsumedLaunchURL = true
+                closure(pendingURL)
+            }
+        }
+    }
+
+    func consumePendingOpenWorkspaceURL() -> URL? {
+        guard let url = pendingOpenWorkspaceURL else { return nil }
+        pendingOpenWorkspaceURL = nil
+        hasConsumedLaunchURL = true
+        return url
+    }
 
     private weak var trackedSettingsWindow: NSWindow?
     private var isOpeningSettingsFromMenuBar = false
@@ -284,7 +308,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     ) {
         guard !didCoordinateWorkspaceRestoration else { return }
         didCoordinateWorkspaceRestoration = true
-        guard usesFallback else { return }
+        guard usesFallback, !hasConsumedLaunchURL else { return }
 
         for bookmarkData in WorkspaceManager.additionalWorkspaceBookmarksForLaunch {
             openWindow(bookmarkData)
@@ -525,12 +549,23 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         ensureRegularAndActivate()
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         if isDirectory {
-            if let activeWorkspace = WorkspaceManager.active, activeWorkspace.rootURL == nil {
-                activeWorkspace.attachWorkspace(at: url)
+            let standardURL = url.standardizedFileURL
+            // SwiftUI may create a spurious empty default window when the app
+            // is activated via a folder drop.  Signal all directory-open paths
+            // so WorkspaceManager.registerWindow can close it.
+            isOpeningDirectoryViaExternalDrop = true
+            if let existingManager = WorkspaceManager.manager(for: standardURL) {
+                existingManager.makeKeyAndOrderFront()
+            } else if let activeWorkspace = WorkspaceManager.active, activeWorkspace.rootURL == nil {
+                activeWorkspace.attachWorkspace(at: standardURL)
+            } else if let emptyManager = WorkspaceManager.emptyManager {
+                emptyManager.attachWorkspace(at: standardURL)
             } else if let closure = openWorkspaceWindowClosure {
-                closure(url)
+                closure(standardURL)
+            } else {
+                pendingOpenWorkspaceURL = standardURL
             }
-            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+            NSDocumentController.shared.noteNewRecentDocumentURL(standardURL)
         } else {
             NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
                 if let error {
@@ -545,6 +580,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         for url in urls {
             openURL(url)
         }
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        for filename in filenames {
+            let url = URL(fileURLWithPath: filename)
+            openURL(url)
+        }
+        sender.reply(toOpenOrPrint: .success)
     }
 }
 

@@ -39,6 +39,19 @@ final class WorkspaceManager {
         liveManagers.first(where: { $0.workspaceWindow?.isMainWindow == true })
     }
 
+    static func manager(for url: URL) -> WorkspaceManager? {
+        let targetPath = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return liveManagers.first { manager in
+            guard manager.workspaceWindow != nil,
+                  let rootPath = manager.rootURL?.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
+            return rootPath.caseInsensitiveCompare(targetPath) == .orderedSame
+        }
+    }
+
+    static var emptyManager: WorkspaceManager? {
+        liveManagers.first(where: { $0.workspaceWindow != nil && $0.rootURL == nil })
+    }
+
     static func windowDidBecomeMain(_ window: NSWindow) {
         if let manager = liveManagers.first(where: { $0.workspaceWindow === window }) {
             activeManager = manager
@@ -60,11 +73,21 @@ final class WorkspaceManager {
 
     static func persistOpenWorkspacesForRestoration() {
         guard !isTerminating else { return }
-        let bookmarks = liveManagers.compactMap { manager -> Data? in
-            guard manager.workspaceWindow != nil else { return nil }
-            return manager.restorationBookmarkData
+        var seenPaths = Set<String>()
+        var uniqueBookmarks: [Data] = []
+        for manager in liveManagers {
+            guard manager.workspaceWindow != nil,
+                  let rootPath = manager.rootURL?.resolvingSymlinksInPath().standardizedFileURL.path else {
+                continue
+            }
+            if !seenPaths.contains(rootPath) {
+                seenPaths.insert(rootPath)
+                if let bookmark = manager.restorationBookmarkData {
+                    uniqueBookmarks.append(bookmark)
+                }
+            }
         }
-        UserDefaults.standard.set(bookmarks, forKey: sessionBookmarksKey)
+        UserDefaults.standard.set(uniqueBookmarks, forKey: sessionBookmarksKey)
     }
 
     static func beginAppTermination() {
@@ -126,11 +149,39 @@ final class WorkspaceManager {
     private static let autoSaveDelay: TimeInterval = 0.45
     private static let launchRestorationBookmarks: [Data] = {
         let defaults = UserDefaults.standard
+        let rawBookmarks: [Data]
         if defaults.object(forKey: sessionBookmarksKey) != nil {
-            return defaults.array(forKey: sessionBookmarksKey) as? [Data] ?? []
+            rawBookmarks = defaults.array(forKey: sessionBookmarksKey) as? [Data] ?? []
+        } else if let single = defaults.data(forKey: bookmarkKey) {
+            rawBookmarks = [single]
+        } else {
+            rawBookmarks = []
         }
-        return defaults.data(forKey: bookmarkKey).map { [$0] } ?? []
+
+        var seenPaths = Set<String>()
+        var uniqueBookmarks: [Data] = []
+        for bookmarkData in rawBookmarks {
+            var isStale = false
+            if let url = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+                if !seenPaths.contains(path) {
+                    seenPaths.insert(path)
+                    uniqueBookmarks.append(bookmarkData)
+                }
+            }
+        }
+        return uniqueBookmarks
     }()
+
+    /// Ensures the primary-workspace bookmark is only restored once (during
+    /// the first WorkspaceManager init at launch). Any later managers created
+    /// without an explicit folder/bookmark remain empty.
+    private static var didRestorePrimaryWorkspace = false
 
     init(folderURL: URL? = nil, bookmarkData: Data? = nil) {
         expandedFolderPaths = Set(
@@ -142,7 +193,10 @@ final class WorkspaceManager {
             }
         } else if let folderURL {
             _ = attachWorkspace(at: folderURL)
-        } else {
+        } else if let launchURL = ClearlyAppDelegate.shared?.consumePendingOpenWorkspaceURL() {
+            _ = attachWorkspace(at: launchURL)
+        } else if !Self.didRestorePrimaryWorkspace {
+            Self.didRestorePrimaryWorkspace = true
             restoreWorkspace()
         }
         Self.managerReferences.append(WeakReference(self))
@@ -185,7 +239,8 @@ final class WorkspaceManager {
     @discardableResult
     func attachWorkspace(at chosenURL: URL) -> Bool {
         let url = chosenURL.standardizedFileURL
-        if rootURL?.standardizedFileURL == url {
+        let targetPath = chosenURL.resolvingSymlinksInPath().standardizedFileURL.path
+        if rootURL?.resolvingSymlinksInPath().standardizedFileURL.path.caseInsensitiveCompare(targetPath) == .orderedSame {
             refreshTree()
             return true
         }
@@ -667,8 +722,29 @@ final class WorkspaceManager {
 
     // MARK: - Workspace window coordination
 
+    func makeKeyAndOrderFront() {
+        guard let window = workspaceWindow else { return }
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        Self.activeManager = self
+    }
+
     func registerWindow(_ window: NSWindow) {
         workspaceWindow = window
+
+        // SwiftUI may create an extra empty default window when the app is
+        // activated via a folder drop (due to .defaultLaunchBehavior(.presented)).
+        // If this manager has no folder and a directory-open is in flight,
+        // this window is spurious — close it immediately.
+        if rootURL == nil, ClearlyAppDelegate.shared?.isOpeningDirectoryViaExternalDrop == true {
+            ClearlyAppDelegate.shared?.isOpeningDirectoryViaExternalDrop = false
+            window.close()
+            return
+        }
+
         Self.activeManager = self
         Self.persistOpenWorkspacesForRestoration()
     }
