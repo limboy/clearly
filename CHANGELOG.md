@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [3.7.3] - 2026-07-24
+- Fix workspace folder drops during launch restoration
+
 ## [3.7.2] - 2026-07-24
 - Fix multiple workspace windows restoring reliably across app restarts
 - Fix opening folders from File > Open Recent in sandboxed mode
