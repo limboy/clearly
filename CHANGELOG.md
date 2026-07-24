@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [3.7.2] - 2026-07-24
+- Fix multiple workspace windows restoring reliably across app restarts
+- Fix opening folders from File > Open Recent in sandboxed mode
+- Fix duplicate window creation when dragging folders onto the app icon
+
 ## [3.7.1] - 2026-07-24
 - Fixed all open workspace windows not restoring on restart
 - Fixed folders not opening from File > Open Recent
