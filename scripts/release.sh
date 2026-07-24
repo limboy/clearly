@@ -134,8 +134,9 @@ xcodebuild -project Clearly.xcodeproj \
   -scheme Clearly \
   -configuration Release \
   -archivePath build/Clearly.xcarchive \
-  -allowProvisioningUpdates \
   archive \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
   DEVELOPMENT_TEAM="$TEAM_ID" \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$VERSION"
@@ -145,8 +146,7 @@ sed "s/\${APPLE_TEAM_ID}/$TEAM_ID/g" ExportOptions.plist > build/ExportOptions.p
 xcodebuild -exportArchive \
   -archivePath build/Clearly.xcarchive \
   -exportOptionsPlist build/ExportOptions.plist \
-  -exportPath build/export \
-  -allowProvisioningUpdates
+  -exportPath build/export
 
 echo "🔑 Re-signing with sandbox entitlements (inside-out)..."
 sed "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/$BUNDLE_ID/g" Clearly/Clearly.entitlements > build/Clearly.entitlements

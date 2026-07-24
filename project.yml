@@ -74,7 +74,8 @@ targets:
           PRODUCT_NAME: "Clearly Dev"
           CODE_SIGN_STYLE: Automatic
         Release:
-          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"
 
   ClearlyQuickLook:
     type: app-extension
@@ -117,4 +118,5 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook
           CODE_SIGN_STYLE: Automatic
         Release:
-          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"

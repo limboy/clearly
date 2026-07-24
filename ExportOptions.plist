@@ -7,6 +7,6 @@
     <key>teamID</key>
     <string>${APPLE_TEAM_ID}</string>
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
 </dict>
 </plist>

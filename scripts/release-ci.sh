@@ -98,8 +98,9 @@ xcodebuild \
   -scheme Clearly \
   -configuration Release \
   -archivePath build/Clearly.xcarchive \
-  "${authentication_args[@]}" \
   archive \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
   DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$VERSION"
@@ -110,8 +111,7 @@ xcodebuild \
   -exportArchive \
   -archivePath build/Clearly.xcarchive \
   -exportOptionsPlist build/ExportOptions.plist \
-  -exportPath build/export \
-  "${authentication_args[@]}"
+  -exportPath build/export
 
 echo "🔑 Re-signing the exported app inside-out..."
 sed "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.sabotage.clearly/g" \
