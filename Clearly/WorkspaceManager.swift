@@ -66,9 +66,15 @@ final class WorkspaceManager {
     }
 
     static func closeAllWindowsForMenuBar() {
+        // Snapshot the current workspace list before any window closes.
+        // Each close triggers unregisterWindow -> persistOpenWorkspacesForRestoration,
+        // which would progressively shrink the saved list to zero.
+        persistOpenWorkspacesForRestoration()
+        isTerminating = true
         for manager in liveManagers {
             manager.workspaceWindow?.performClose(nil)
         }
+        isTerminating = false
     }
 
     static func persistOpenWorkspacesForRestoration() {
@@ -145,8 +151,31 @@ final class WorkspaceManager {
 
     private static let bookmarkKey = "workspaceFolderBookmark"
     private static let sessionBookmarksKey = "workspaceSessionFolderBookmarks"
+    private static let recentBookmarksKey = "workspaceRecentBookmarks"
     private static let expandedPathsKey = "workspaceExpandedFolderPaths"
     private static let autoSaveDelay: TimeInterval = 0.45
+
+    /// Returns a previously cached security-scoped bookmark for `url`, if any.
+    private static func savedRecentBookmark(for url: URL) -> Data? {
+        let key = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let dict = UserDefaults.standard.dictionary(forKey: recentBookmarksKey) as? [String: Data]
+        return dict?[key]
+    }
+
+    /// Caches a security-scoped bookmark so Open Recent can reopen `url` later.
+    private static func saveRecentBookmark(_ data: Data, for url: URL) {
+        let key = url.resolvingSymlinksInPath().standardizedFileURL.path
+        var dict = (UserDefaults.standard.dictionary(forKey: recentBookmarksKey) as? [String: Data]) ?? [:]
+        dict[key] = data
+        // Keep the cache bounded.
+        if dict.count > 20 {
+            let excess = dict.count - 20
+            for k in dict.keys.prefix(excess) {
+                dict.removeValue(forKey: k)
+            }
+        }
+        UserDefaults.standard.set(dict, forKey: recentBookmarksKey)
+    }
     private static let launchRestorationBookmarks: [Data] = {
         let defaults = UserDefaults.standard
         let rawBookmarks: [Data]
@@ -255,21 +284,49 @@ final class WorkspaceManager {
                 relativeTo: nil
             )
         } catch {
+            // No current Powerbox access (e.g. URL from Open Recent).
+            // Fall back to a previously cached bookmark for this folder.
+            if let saved = Self.savedRecentBookmark(for: url) {
+                let result = restoreWorkspace(from: saved)
+                if result {
+                    Self.persistOpenWorkspacesForRestoration()
+                    NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                }
+                return result
+            }
             setError("Clearly couldn’t remember access to “\(url.lastPathComponent)”.", error)
             return false
         }
 
-        guard url.startAccessingSecurityScopedResource() else {
+        // Resolve the bookmark back to a security-scoped URL. Calling
+        // startAccessingSecurityScopedResource on the original URL fails
+        // when it came from Open Recent (a plain, non-scoped URL).
+        var isBookmarkStale = false
+        let scopedResolvedURL: URL
+        do {
+            scopedResolvedURL = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isBookmarkStale
+            ).standardizedFileURL
+        } catch {
+            setError("Clearly couldn’t access “\(url.lastPathComponent)”.", error)
+            return false
+        }
+
+        guard scopedResolvedURL.startAccessingSecurityScopedResource() else {
             setError("Clearly couldn’t access “\(url.lastPathComponent)”.")
             return false
         }
 
         stopMonitoring()
         scopedURL?.stopAccessingSecurityScopedResource()
-        scopedURL = url
+        scopedURL = scopedResolvedURL
         restorationBookmarkData = bookmarkData
 
         UserDefaults.standard.set(bookmarkData, forKey: Self.bookmarkKey)
+        Self.saveRecentBookmark(bookmarkData, for: url)
         replaceWorkspaceRoot(with: url)
         Self.persistOpenWorkspacesForRestoration()
         NSDocumentController.shared.noteNewRecentDocumentURL(url)

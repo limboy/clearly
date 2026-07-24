@@ -581,14 +581,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             openURL(url)
         }
     }
-
-    func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        for filename in filenames {
-            let url = URL(fileURLWithPath: filename)
-            openURL(url)
-        }
-        sender.reply(toOpenOrPrint: .success)
-    }
 }
 
 #if canImport(Sparkle)
