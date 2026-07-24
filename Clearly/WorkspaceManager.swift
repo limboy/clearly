@@ -42,14 +42,23 @@ final class WorkspaceManager {
     static func manager(for url: URL) -> WorkspaceManager? {
         let targetPath = url.resolvingSymlinksInPath().standardizedFileURL.path
         return liveManagers.first { manager in
-            guard manager.workspaceWindow != nil,
+            guard !manager.isClosed,
                   let rootPath = manager.rootURL?.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
             return rootPath.caseInsensitiveCompare(targetPath) == .orderedSame
         }
     }
 
     static var emptyManager: WorkspaceManager? {
-        liveManagers.first(where: { $0.workspaceWindow != nil && $0.rootURL == nil })
+        liveManagers.first(where: { !$0.isClosed && $0.rootURL == nil })
+    }
+
+    /// The implicit launch window can be constructed before AppKit delivers a
+    /// folder dropped on the Dock icon. Reusing it prevents the restored
+    /// workspace and the dropped folder from both opening.
+    static var fallbackManagerAwaitingWindow: WorkspaceManager? {
+        liveManagers.first(where: {
+            $0.usesFallbackRestoration && !$0.hasRegisteredWindow && !$0.isClosed
+        })
     }
 
     static func windowDidBecomeMain(_ window: NSWindow) {
@@ -151,6 +160,9 @@ final class WorkspaceManager {
     @ObservationIgnored private var scopedURL: URL?
     @ObservationIgnored private weak var workspaceWindow: NSWindow?
     @ObservationIgnored private(set) var restorationBookmarkData: Data?
+    @ObservationIgnored private let usesFallbackRestoration: Bool
+    @ObservationIgnored private var hasRegisteredWindow = false
+    @ObservationIgnored private var isClosed = false
 
     private static let bookmarkKey = "workspaceFolderBookmark"
     private static let sessionBookmarksKey = "workspaceSessionFolderBookmarks"
@@ -243,6 +255,7 @@ final class WorkspaceManager {
     private static var didRestorePrimaryWorkspace = false
 
     init(folderURL: URL? = nil, bookmarkData: Data? = nil) {
+        usesFallbackRestoration = folderURL == nil && bookmarkData == nil
         expandedFolderPaths = Set(
             UserDefaults.standard.stringArray(forKey: Self.expandedPathsKey) ?? []
         )
@@ -821,17 +834,8 @@ final class WorkspaceManager {
 
     func registerWindow(_ window: NSWindow) {
         workspaceWindow = window
-
-        // SwiftUI may create an extra empty default window when the app is
-        // activated via a folder drop (due to .defaultLaunchBehavior(.presented)).
-        // If this manager has no folder and a directory-open is in flight,
-        // this window is spurious — close it immediately.
-        if rootURL == nil, ClearlyAppDelegate.shared?.isOpeningDirectoryViaExternalDrop == true {
-            ClearlyAppDelegate.shared?.isOpeningDirectoryViaExternalDrop = false
-            window.close()
-            return
-        }
-
+        hasRegisteredWindow = true
+        isClosed = false
         Self.activeManager = self
         Self.persistOpenWorkspacesForRestoration()
     }
@@ -839,6 +843,7 @@ final class WorkspaceManager {
     func unregisterWindow(_ window: NSWindow) {
         if workspaceWindow === window {
             workspaceWindow = nil
+            isClosed = true
             if Self.activeManager === self {
                 Self.activeManager = Self.liveManagers.last(where: \.hasVisibleWindow)
             }

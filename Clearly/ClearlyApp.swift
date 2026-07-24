@@ -16,12 +16,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     private var pendingOpenWorkspaceURL: URL?
     private(set) var hasConsumedLaunchURL = false
 
-    /// True while `openURL` is creating a workspace window for a dropped
-    /// folder.  `WorkspaceManager.registerWindow` uses this to detect and
-    /// close spurious empty default windows that SwiftUI creates alongside
-    /// the intended folder window.
-    var isOpeningDirectoryViaExternalDrop = false
-
     private var inFlightOpeningFolderPaths: Set<String> = []
 
     var openWorkspaceWindowClosure: ((URL) -> Void)? {
@@ -71,6 +65,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // SwiftUI can construct and show the default WindowGroup before
+        // applicationDidFinishLaunching. WorkspaceView.onAppear and
+        // WorkspaceManager's launch-URL handoff both need the real delegate
+        // during that interval.
+        Self.shared = self
+
         // Avoid Dock-icon flash when the user launches with the toggle on.
         // The `didBecomeMain` observer flips us back to `.regular` once a
         // document window appears (Finder-open, untitled-on-launch, etc.).
@@ -80,7 +80,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Self.shared = self
         injectFontSubmenu()
 
         DiagnosticLog.log("didFinishLaunching: keepRunning=\(keepRunningMenubarOnly), docs=\(NSDocumentController.shared.documents.count)")
@@ -552,7 +551,13 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
     func openURL(_ url: URL) {
         ensureRegularAndActivate()
-        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        // A URL supplied by Open Recent no longer carries the Powerbox
+        // extension that originally authorized it. Its resource lookup can
+        // therefore fail even though our saved security-scoped bookmark
+        // still identifies it as a workspace folder.
+        let savedFolderBookmark = WorkspaceManager.bookmarkData(for: url)
+        let isDirectory = savedFolderBookmark != nil
+            || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         if isDirectory {
             let standardURL = url.standardizedFileURL
             let pathKey = standardURL.resolvingSymlinksInPath().path.lowercased()
@@ -565,20 +570,23 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 self?.inFlightOpeningFolderPaths.remove(pathKey)
             }
 
-            // SwiftUI may create a spurious empty default window when the app
-            // is activated via a folder drop. Signal all directory-open paths
-            // so WorkspaceManager.registerWindow can close it.
-            isOpeningDirectoryViaExternalDrop = true
             if let existingManager = WorkspaceManager.manager(for: standardURL) {
                 existingManager.makeKeyAndOrderFront()
+            } else if let launchManager = WorkspaceManager.fallbackManagerAwaitingWindow {
+                // AppKit can deliver a Dock-icon drop after SwiftUI has
+                // initialized (and restored) its implicit launch window but
+                // before that window registers. Replace that provisional
+                // workspace and suppress restoration of the remaining old
+                // session.
+                hasConsumedLaunchURL = true
+                attachFolder(standardURL, to: launchManager, bookmarkData: savedFolderBookmark)
             } else if let activeWorkspace = WorkspaceManager.active, activeWorkspace.rootURL == nil {
-                attachFolder(standardURL, to: activeWorkspace)
+                attachFolder(standardURL, to: activeWorkspace, bookmarkData: savedFolderBookmark)
             } else if let emptyManager = WorkspaceManager.emptyManager {
-                attachFolder(standardURL, to: emptyManager)
+                attachFolder(standardURL, to: emptyManager, bookmarkData: savedFolderBookmark)
             } else {
-                let bookmarkData = WorkspaceManager.bookmarkData(for: standardURL)
-                if let bookmarkData, let bookmarkClosure = openWorkspaceWindowWithBookmarkClosure {
-                    bookmarkClosure(bookmarkData)
+                if let savedFolderBookmark, let bookmarkClosure = openWorkspaceWindowWithBookmarkClosure {
+                    bookmarkClosure(savedFolderBookmark)
                 } else if let closure = openWorkspaceWindowClosure {
                     closure(standardURL)
                 } else {
@@ -596,8 +604,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         }
     }
 
-    private func attachFolder(_ url: URL, to manager: WorkspaceManager) {
-        if let bookmarkData = WorkspaceManager.bookmarkData(for: url) {
+    private func attachFolder(_ url: URL, to manager: WorkspaceManager, bookmarkData: Data? = nil) {
+        if let bookmarkData = bookmarkData ?? WorkspaceManager.bookmarkData(for: url) {
             _ = manager.attachWorkspace(at: url) || manager.restoreWorkspace(from: bookmarkData)
         } else {
             manager.attachWorkspace(at: url)
