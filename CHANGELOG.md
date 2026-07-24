@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-07-24
+- Fixed all open workspace windows not restoring on restart
+- Fixed folders not opening from File > Open Recent
+- Fixed dragging a folder to the app icon opening duplicate windows
+
 ## [3.7.0] - 2026-07-21
 - Drag folders onto the Clearly app icon or Dock icon to open them as workspaces
 - Restores all open workspace windows across app restarts
