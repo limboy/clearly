@@ -74,6 +74,9 @@ final class WorkspaceManager {
         for manager in liveManagers {
             manager.workspaceWindow?.performClose(nil)
         }
+    }
+
+    static func resetTerminationState() {
         isTerminating = false
     }
 
@@ -155,15 +158,42 @@ final class WorkspaceManager {
     private static let expandedPathsKey = "workspaceExpandedFolderPaths"
     private static let autoSaveDelay: TimeInterval = 0.45
 
-    /// Returns a previously cached security-scoped bookmark for `url`, if any.
-    private static func savedRecentBookmark(for url: URL) -> Data? {
-        let key = url.resolvingSymlinksInPath().standardizedFileURL.path
-        let dict = UserDefaults.standard.dictionary(forKey: recentBookmarksKey) as? [String: Data]
-        return dict?[key]
+    /// Returns a security-scoped bookmark for `targetURL` if authorized access is saved anywhere.
+    static func bookmarkData(for targetURL: URL) -> Data? {
+        let targetPath = targetURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let dict = UserDefaults.standard.dictionary(forKey: recentBookmarksKey) as? [String: Data] ?? [:]
+
+        if let direct = dict[targetPath] {
+            return direct
+        }
+
+        for (path, data) in dict {
+            if path.caseInsensitiveCompare(targetPath) == .orderedSame {
+                return data
+            }
+        }
+
+        let candidates = (UserDefaults.standard.array(forKey: sessionBookmarksKey) as? [Data]) ?? []
+            + (UserDefaults.standard.data(forKey: bookmarkKey).map { [$0] } ?? [])
+        for bookmarkData in candidates {
+            var isStale = false
+            if let resolved = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                if resolved.resolvingSymlinksInPath().standardizedFileURL.path.caseInsensitiveCompare(targetPath) == .orderedSame {
+                    saveRecentBookmark(bookmarkData, for: targetURL)
+                    return bookmarkData
+                }
+            }
+        }
+        return nil
     }
 
     /// Caches a security-scoped bookmark so Open Recent can reopen `url` later.
-    private static func saveRecentBookmark(_ data: Data, for url: URL) {
+    static func saveRecentBookmark(_ data: Data, for url: URL) {
         let key = url.resolvingSymlinksInPath().standardizedFileURL.path
         var dict = (UserDefaults.standard.dictionary(forKey: recentBookmarksKey) as? [String: Data]) ?? [:]
         dict[key] = data
@@ -286,7 +316,7 @@ final class WorkspaceManager {
         } catch {
             // No current Powerbox access (e.g. URL from Open Recent).
             // Fall back to a previously cached bookmark for this folder.
-            if let saved = Self.savedRecentBookmark(for: url) {
+            if let saved = Self.bookmarkData(for: url) {
                 let result = restoreWorkspace(from: saved)
                 if result {
                     Self.persistOpenWorkspacesForRestoration()
@@ -342,7 +372,7 @@ final class WorkspaceManager {
     }
 
     @discardableResult
-    private func restoreWorkspace(from bookmarkData: Data) -> Bool {
+    func restoreWorkspace(from bookmarkData: Data) -> Bool {
         do {
             var isStale = false
             let url = try URL(

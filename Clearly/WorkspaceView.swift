@@ -218,6 +218,9 @@ struct WorkspaceView: View {
                     openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderURL: url))
                 }
             }
+            ClearlyAppDelegate.shared?.openWorkspaceWindowWithBookmarkClosure = { [openWindow] bookmarkData in
+                openWindow(id: WorkspaceScene.id, value: WorkspaceScene.Value(folderBookmarkData: bookmarkData))
+            }
         }
         .onChange(of: workspace.rootURL) { _, _ in
             syncSceneValue()

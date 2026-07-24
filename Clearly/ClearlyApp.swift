@@ -22,6 +22,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     /// the intended folder window.
     var isOpeningDirectoryViaExternalDrop = false
 
+    private var inFlightOpeningFolderPaths: Set<String> = []
+
     var openWorkspaceWindowClosure: ((URL) -> Void)? {
         didSet {
             if let pendingURL = pendingOpenWorkspaceURL, let closure = openWorkspaceWindowClosure {
@@ -31,6 +33,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             }
         }
     }
+
+    var openWorkspaceWindowWithBookmarkClosure: ((Data) -> Void)?
 
     func consumePendingOpenWorkspaceURL() -> URL? {
         guard let url = pendingOpenWorkspaceURL else { return nil }
@@ -296,6 +300,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     /// menubar dropdown before opening a window — `updateActivationPolicy()`
     /// will then keep us `.regular` until the window closes.
     func ensureRegularAndActivate() {
+        WorkspaceManager.resetTerminationState()
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
@@ -550,20 +555,35 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         if isDirectory {
             let standardURL = url.standardizedFileURL
+            let pathKey = standardURL.resolvingSymlinksInPath().path.lowercased()
+
+            if inFlightOpeningFolderPaths.contains(pathKey) {
+                return
+            }
+            inFlightOpeningFolderPaths.insert(pathKey)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.inFlightOpeningFolderPaths.remove(pathKey)
+            }
+
             // SwiftUI may create a spurious empty default window when the app
-            // is activated via a folder drop.  Signal all directory-open paths
+            // is activated via a folder drop. Signal all directory-open paths
             // so WorkspaceManager.registerWindow can close it.
             isOpeningDirectoryViaExternalDrop = true
             if let existingManager = WorkspaceManager.manager(for: standardURL) {
                 existingManager.makeKeyAndOrderFront()
             } else if let activeWorkspace = WorkspaceManager.active, activeWorkspace.rootURL == nil {
-                activeWorkspace.attachWorkspace(at: standardURL)
+                attachFolder(standardURL, to: activeWorkspace)
             } else if let emptyManager = WorkspaceManager.emptyManager {
-                emptyManager.attachWorkspace(at: standardURL)
-            } else if let closure = openWorkspaceWindowClosure {
-                closure(standardURL)
+                attachFolder(standardURL, to: emptyManager)
             } else {
-                pendingOpenWorkspaceURL = standardURL
+                let bookmarkData = WorkspaceManager.bookmarkData(for: standardURL)
+                if let bookmarkData, let bookmarkClosure = openWorkspaceWindowWithBookmarkClosure {
+                    bookmarkClosure(bookmarkData)
+                } else if let closure = openWorkspaceWindowClosure {
+                    closure(standardURL)
+                } else {
+                    pendingOpenWorkspaceURL = standardURL
+                }
             }
             NSDocumentController.shared.noteNewRecentDocumentURL(standardURL)
         } else {
@@ -573,6 +593,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 }
             }
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        }
+    }
+
+    private func attachFolder(_ url: URL, to manager: WorkspaceManager) {
+        if let bookmarkData = WorkspaceManager.bookmarkData(for: url) {
+            _ = manager.attachWorkspace(at: url) || manager.restoreWorkspace(from: bookmarkData)
+        } else {
+            manager.attachWorkspace(at: url)
         }
     }
 
